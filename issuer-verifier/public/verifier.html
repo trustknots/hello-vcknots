@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VCKnots コミュニティ・ゲートウェイ (Verifier)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    :root {
+      --focus-color: var(--color-verifier);
+    }
+    #verifyArea, #successArea {
+      display: none;
+    }
+    .verified-box {
+      border: 3px solid var(--color-success);
+      background-color: var(--color-success-light);
+      padding: 1.5rem;
+      border-radius: var(--radius);
+      margin-top: 1.5rem;
+      text-align: center;
+      box-shadow: 4px 4px 0px 0px var(--border-color);
+    }
+    .welcome-title {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: var(--color-success);
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <span class="badge badge-verifier">Verifier / 検証者</span>
+      <h1 style="margin-top: 0.5rem;">🚪 VCKnots ゲートウェイ</h1>
+      <p>保有している「VCKnots User メダル」を提示して、秘密のコミュニティゲートを通過しましょう！</p>
+    </header>
+
+    <!-- 初期フェーズ：検証開始 -->
+    <div class="card" id="startCard">
+      <div class="card-title">
+        <span>🔒 メダルの提示を要求する</span>
+      </div>
+      <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+        「検証要求を作成」を押すと、メダル提示用の要求URLおよびQRコードが生成されます。
+      </p>
+      <button class="btn" id="btnStart" style="--btn-color: var(--color-verifier);">
+        <span>🔑 検証要求を作成する</span>
+      </button>
+    </div>
+
+    <!-- 検証フェーズ：QRコード表示＆待機 -->
+    <div class="card" id="verifyArea">
+      <div class="card-title" style="border-color: var(--color-verifier); color: var(--color-verifier);">
+        <span>📡 メダルの提示を待機中...</span>
+      </div>
+      
+      <p style="text-align: center; margin-bottom: 1rem;">
+        Wallet アプリでこの要求QRコードを読み取るか、Request URLをコピーして Wallet にペーストして提示を完了してください。
+      </p>
+
+      <!-- QRコード描画エリア -->
+      <div class="qr-container">
+        <canvas id="qrCanvas"></canvas>
+        <span class="badge badge-verifier">
+          <span class="spinner" style="margin-right: 0.25rem;"></span> 提示待機中...
+        </span>
+      </div>
+
+      <div class="copy-area">
+        <label>Presentation Request URL (コピペ用):</label>
+        <div class="copy-box">
+          <input type="text" id="requestUrl" readonly class="copy-input">
+          <button class="btn btn-copy" id="btnCopy" style="--btn-color: var(--text-secondary);">コピー</button>
+        </div>
+        <p id="copyStatus" style="color: var(--color-success); font-size: 0.9rem; margin-top: 0.5rem; text-align: right; display: none; font-weight: 500;">
+          ✓ コピーしました！
+        </p>
+      </div>
+    </div>
+
+    <!-- 成功フェーズ：歓迎画面 -->
+    <div class="card" id="successArea">
+      <div class="verified-box">
+        <div class="medal-icon">🏅</div>
+        <div class="badge badge-success">Verified ✓</div>
+        <div class="welcome-title">Welcome to VCKnots!</div>
+        <p style="font-size: 1.25rem; color: var(--text-primary); margin: 1rem 0;">
+          ユーザー <strong><span id="verifiedUser" style="border-bottom: 3px solid var(--color-success); padding: 0 0.5rem; font-size: 1.5rem;">Explorer</span></strong> さんの、<br>
+          「VCKnots User メダル」の真正性が正常に検証されました！ 🎉
+        </p>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+          これであなたも正式な VCKnots ユーザーコミュニティのメンバーです！
+        </p>
+      </div>
+
+      <button class="btn" id="btnRestart" style="--btn-color: var(--text-secondary); margin-top: 1.5rem; background-color: #f3f4f6; color: var(--text-primary);">
+        <span>← ゲートに戻る</span>
+      </button>
+    </div>
+
+    <footer>
+      <p>&copy; 2026 VCKnots Project - Powered by VCKnots Library</p>
+    </footer>
+  </div>
+
+  <!-- QRコード生成ライブラリ (QRious) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <script>
+    const btnStart = document.getElementById('btnStart');
+    const btnRestart = document.getElementById('btnRestart');
+    const btnCopy = document.getElementById('btnCopy');
+    const startCard = document.getElementById('startCard');
+    const verifyArea = document.getElementById('verifyArea');
+    const successArea = document.getElementById('successArea');
+    const requestUrlInput = document.getElementById('requestUrl');
+    const copyStatus = document.getElementById('copyStatus');
+    const qrCanvas = document.getElementById('qrCanvas');
+    const verifiedUserSpan = document.getElementById('verifiedUser');
+
+    let pollingInterval = null;
+
+    // 1. 検証要求 (Request Object) の生成
+    btnStart.addEventListener('click', async () => {
+      btnStart.disabled = true;
+      btnStart.innerHTML = '<span class="spinner"></span> <span>要求生成中...</span>';
+
+      try {
+        const verificationQuery = {
+          dcql_query: {
+            credentials: [
+              {
+                id: 'medal-descriptor',
+                format: 'jwt_vc_json',
+                meta: {
+                  type_values: [['VCKnotsUserMedal']]
+                }
+              }
+            ]
+          }
+        };
+        const state = crypto.randomUUID().replaceAll('-', '');
+
+        const response = await fetch('/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            credentialId: 'VCKnotsUserMedal',
+            state,
+            query: verificationQuery
+          })
+        });
+
+        const requestUrl = await response.text();
+        if (!response.ok) {
+          throw new Error(requestUrl || 'Verification request generation failed');
+        }
+
+        requestUrlInput.value = requestUrl;
+
+        // QRコード生成
+        new QRious({
+          element: qrCanvas,
+          value: requestUrl,
+          size: 180,
+          background: '#ffffff',
+          foreground: '#1f2937',
+          level: 'M'
+        });
+
+        startCard.style.display = 'none';
+        verifyArea.style.display = 'block';
+
+        // 2. ショートポーリング開始 (2秒おき)
+        startPolling();
+
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+        btnStart.disabled = false;
+        btnStart.innerHTML = '<span>🔑 検証要求を作成する</span>';
+      }
+    });
+
+    // ポーリング処理
+    function startPolling() {
+      if (pollingInterval) clearInterval(pollingInterval);
+
+      pollingInterval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/status');
+          const data = await res.json();
+
+          if (data.status === 'verified') {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+
+            // 成功画面へ切り替え
+            verifiedUserSpan.innerText = data.username || 'VCKnots Explorer';
+            verifyArea.style.display = 'none';
+            successArea.style.display = 'block';
+          }
+        } catch (ex) {
+          console.error('[verifier] Polling error:', ex);
+        }
+      }, 2000);
+    }
+
+    // コピー機能
+    btnCopy.addEventListener('click', () => {
+      requestUrlInput.select();
+      document.execCommand('copy');
+      
+      copyStatus.style.display = 'block';
+      setTimeout(() => {
+        copyStatus.style.display = 'none';
+      }, 2000);
+    });
+
+    // リスタート
+    btnRestart.addEventListener('click', () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+      startCard.style.display = 'block';
+      successArea.style.display = 'none';
+      btnStart.disabled = false;
+      btnStart.innerHTML = '<span>🔑 検証要求を作成する</span>';
+    });
+  </script>
+</body>
+</html>

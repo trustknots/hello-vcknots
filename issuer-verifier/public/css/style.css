@@ -1,0 +1,305 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-color: #f9fafb;
+  --card-bg: #ffffff;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  
+  --border-color: #374151; /* フラットデザインのしっかりした枠線 */
+  --border-width: 2px;
+  --radius: 8px;
+
+  /* アクセントカラー (ソリッドで明快なフラットトーン) */
+  --color-issuer: #2563eb;       /* コバルトブルー */
+  --color-issuer-light: #eff6ff;
+  --color-wallet: #7c3aed;       /* バイオレット/パープル */
+  --color-wallet-light: #f5f3ff;
+  --color-verifier: #d97706;     /* サンフラワーゴールド */
+  --color-verifier-light: #fef3c7;
+  --color-success: #059669;      /* フォレストグリーン */
+  --color-success-light: #ecfdf5;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  line-height: 1.5;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.container {
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ヘッダー */
+header {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+header h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+header p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  font-weight: 400;
+}
+
+/* フラットカード */
+.card {
+  background-color: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 2rem;
+  /* ネオブルータリズム風のフラットなハードシャドウ */
+  box-shadow: 4px 4px 0px 0px var(--border-color);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.card-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: var(--border-width) solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+/* フォーム要素 */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background-color: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+input[type="text"]:focus {
+  border-color: var(--focus-color, var(--color-issuer));
+}
+
+/* ボタン (フラット＆ハード枠線) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.9rem 1.5rem;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: var(--btn-color, var(--text-primary));
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: 3px 3px 0px 0px var(--border-color);
+  transition: all 0.1s ease;
+}
+
+.btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px 0px var(--border-color);
+}
+
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px 0px var(--border-color);
+}
+
+/* コピペ用コンポーネント */
+.copy-area {
+  margin-top: 1rem;
+}
+
+.copy-box {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.copy-input {
+  flex: 1;
+  background-color: #f3f4f6;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.8rem;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.btn-copy {
+  --btn-color: #4b5563;
+  width: auto;
+  white-space: nowrap;
+}
+
+/* QRコード領域 */
+.qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  border: var(--border-width) dashed var(--border-color);
+  border-radius: var(--radius);
+  background-color: #fff;
+}
+
+.qr-placeholder {
+  width: 160px;
+  height: 160px;
+  background-color: #f3f4f6;
+  border: 1px solid var(--border-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* バッジ、タグ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 1.5px solid var(--border-color);
+  border-radius: 9999px;
+  background-color: #e5e7eb;
+}
+
+.badge-issuer {
+  background-color: var(--color-issuer-light);
+  color: var(--color-issuer);
+  border-color: var(--color-issuer);
+}
+
+.badge-wallet {
+  background-color: var(--color-wallet-light);
+  color: var(--color-wallet);
+  border-color: var(--color-wallet);
+}
+
+.badge-verifier {
+  background-color: var(--color-verifier-light);
+  color: var(--color-verifier);
+  border-color: var(--color-verifier);
+}
+
+.badge-success {
+  background-color: var(--color-success-light);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+/* メダルのビジュアル (フラットメダル) */
+.medal-icon {
+  font-size: 3.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background-color: var(--color-verifier-light);
+  border: 3px solid var(--color-verifier);
+  box-shadow: 3px 3px 0px 0px var(--border-color);
+  margin-bottom: 1rem;
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* アラート・通知 */
+.status-banner {
+  padding: 1rem;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius);
+  background-color: #eff6ff;
+  border-color: var(--color-issuer);
+  color: var(--color-issuer);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 2px 2px 0px 0px var(--color-issuer);
+}
+
+/* リアルタイムローディング表示 */
+.spinner {
+  display: inline-block;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: currentColor;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* フッター */
+footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+}

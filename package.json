@@ -1,0 +1,22 @@
+{
+  "name": "hello-vcknots-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "issuer-verifier",
+    "server-core"
+  ],
+  "scripts": {
+    "build": "pnpm build:server-core && pnpm build:issuer-verifier",
+    "build:server-core": "pnpm --filter @trustknots/server-core build",
+    "build:issuer-verifier": "pnpm --filter hello-vcknots-issuer-verifier build",
+    "dev:server": "pnpm --filter hello-vcknots-issuer-verifier dev",
+    "dev:wallet": "cd wallet && go run main.go",
+    "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:wallet\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^8.2.2",
+    "@trustknots/vcknots": "0.7.0"
+  }
+}

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VCKnots メダル・ウォレット (Wallet)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <span class="badge badge-wallet">Wallet / ウォレット</span>
+      <h1 style="margin-top: 0.5rem;">🎒 VCKnots Medal Wallet</h1>
+      <p>あなたの獲得した VCKnots User メダル(Verifiable Credentials)を一括管理する場所です。</p>
+    </header>
+
+    <!-- アクション領域（獲得・提示） -->
+    <div class="card">
+      <div class="tab-container">
+        <button class="tab-btn active" id="tabReceiveBtn">📥 メダルを獲得する</button>
+        <button class="tab-btn" id="tabPresentBtn">📤 メダルを提示する</button>
+      </div>
+
+      <!-- メダルを獲得するコンテンツ -->
+      <div class="tab-content active" id="tabReceiveContent">
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="offerUrl">Credential Offer URL を貼り付け</label>
+          <input type="text" id="offerUrl" placeholder="openid-credential-offer://?credential_offer=...">
+        </div>
+        <button class="btn" id="btnReceive" style="--btn-color: var(--color-wallet);">
+          <span>📥 メダルを受け取る</span>
+        </button>
+      </div>
+
+      <!-- メダルを提示するコンテンツ -->
+      <div class="tab-content" id="tabPresentContent">
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="requestUrl">Presentation Request URL (要求URL) を貼り付け</label>
+          <input type="text" id="requestUrl" placeholder="openid4vp://authorize?client_id=...">
+        </div>
+        <button class="btn" id="btnPresent" style="--btn-color: var(--color-wallet);">
+          <span>📤 メダルを提示（検証）する</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- メダル一覧 -->
+    <div class="card" style="box-shadow: 4px 4px 0px 0px var(--border-color);">
+      <div class="card-title" style="border-color: var(--color-wallet); color: var(--color-wallet);">
+        <span>🏅 マイ・メダルコレクション</span>
+      </div>
+
+      <div id="noMedals" class="no-medals">
+        <p style="font-size: 3rem; margin-bottom: 0.5rem;">🏅</p>
+        <p style="font-weight: 600; color: var(--text-primary);">メダルがまだありません</p>
+        <p style="font-size: 0.9rem; margin-top: 0.25rem;">Issuer 画面からメダルを発行し、獲得してください！</p>
+      </div>
+
+      <div id="medalsGrid" class="medals-grid" style="display: none;">
+        <!-- JSで動的に追加されます -->
+      </div>
+    </div>
+
+    <footer>
+      <p>&copy; 2026 VCKnots Project - Powered by VCKnots Library</p>
+    </footer>
+  </div>
+
+  <script>
+    // 要素の取得
+    const tabReceiveBtn = document.getElementById('tabReceiveBtn');
+    const tabPresentBtn = document.getElementById('tabPresentBtn');
+    const tabReceiveContent = document.getElementById('tabReceiveContent');
+    const tabPresentContent = document.getElementById('tabPresentContent');
+
+    const btnReceive = document.getElementById('btnReceive');
+    const btnPresent = document.getElementById('btnPresent');
+    const offerUrlInput = document.getElementById('offerUrl');
+    const requestUrlInput = document.getElementById('requestUrl');
+
+    const noMedals = document.getElementById('noMedals');
+    const medalsGrid = document.getElementById('medalsGrid');
+
+    // タブ切り替え処理
+    tabReceiveBtn.addEventListener('click', () => {
+      tabReceiveBtn.classList.add('active');
+      tabPresentBtn.classList.remove('active');
+      tabReceiveContent.classList.add('active');
+      tabPresentContent.classList.remove('active');
+    });
+
+    tabPresentBtn.addEventListener('click', () => {
+      tabPresentBtn.classList.add('active');
+      tabReceiveBtn.classList.remove('active');
+      tabPresentContent.classList.add('active');
+      tabReceiveContent.classList.remove('active');
+    });
+
+    // 1. 保有クレデンシャル一覧のロード
+    async function loadCredentials() {
+      try {
+        const response = await fetch('/api/credentials');
+        const credentials = await response.json();
+
+        if (!credentials || credentials.length === 0) {
+          noMedals.style.display = 'block';
+          medalsGrid.style.display = 'none';
+          return;
+        }
+
+        noMedals.style.display = 'none';
+        medalsGrid.style.display = 'grid';
+        medalsGrid.innerHTML = '';
+
+        credentials.forEach(cred => {
+          const claims = cred.claims || {};
+          const username = claims.username || 'Explorer';
+          const issuedAt = claims.issued_at ? new Date(claims.issued_at).toLocaleString() : '不明';
+          const level = claims.user_level || 'Beginner';
+
+          const card = document.createElement('div');
+          card.className = 'medal-card';
+          card.innerHTML = `
+            <div class="medal-card-icon">🏅</div>
+            <div class="badge badge-success">VC / メダル</div>
+            <div class="medal-card-title">VCKnots User Medal</div>
+            <div class="medal-card-detail" style="margin-top: 0.5rem;">
+              <strong>Username:</strong> ${username}<br>
+              <strong>Level:</strong> ${level}<br>
+              <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                獲得日: ${issuedAt}
+              </span>
+            </div>
+          `;
+          medalsGrid.appendChild(card);
+        });
+
+      } catch (err) {
+        console.error('Failed to load credentials:', err);
+      }
+    }
+
+    // 2. メダル獲得 (Receive)
+    btnReceive.addEventListener('click', async () => {
+      const offerUrl = offerUrlInput.value.trim();
+      if (!offerUrl) {
+        alert('Offer URLを貼り付けてください！');
+        return;
+      }
+
+      btnReceive.disabled = true;
+      btnReceive.innerHTML = '<span class="spinner"></span> <span>メダルを獲得中...</span>';
+
+      try {
+        const response = await fetch('/api/receive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offer_url: offerUrl })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to claim medal');
+        }
+
+        alert('🎉 メダルを正常に獲得しました！');
+        offerUrlInput.value = '';
+        
+        // メダル一覧を更新
+        await loadCredentials();
+
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+      } finally {
+        btnReceive.disabled = false;
+        btnReceive.innerHTML = '<span>📥 メダルを受け取る</span>';
+      }
+    });
+
+    // 3. メダル提示 (Present)
+    btnPresent.addEventListener('click', async () => {
+      const requestUrl = requestUrlInput.value.trim();
+      if (!requestUrl) {
+        alert('要求URLを貼り付けてください！');
+        return;
+      }
+
+      btnPresent.disabled = true;
+      btnPresent.innerHTML = '<span class="spinner"></span> <span>メダルを提示中...</span>';
+
+      try {
+        const response = await fetch('/api/present', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_url: requestUrl })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to present medal');
+        }
+
+        alert('✓ メダルを正常に提示しました！\nVerifier画面を確認してください。');
+        requestUrlInput.value = '';
+
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+      } finally {
+        btnPresent.disabled = false;
+        btnPresent.innerHTML = '<span>📤 メダルを提示（検証）する</span>';
+      }
+    });
+
+    // 初回ロード
+    window.addEventListener('DOMContentLoaded', loadCredentials);
+  </script>
+</body>
+</html>

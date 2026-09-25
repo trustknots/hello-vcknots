@@ -1,0 +1,165 @@
+import { readFileSync } from 'node:fs';
+import { serve } from '@hono/node-server';
+import { AuthzOAuthClients, initializeContext } from '@trustknots/vcknots';
+import { AuthorizationServerIssuer, AuthorizationServerMetadata, AuthzOAuthPolicy, initializeAuthzFlow, } from '@trustknots/vcknots/authz';
+import { CredentialIssuer, CredentialIssuerMetadata, initializeIssuerFlow, } from '@trustknots/vcknots/issuer';
+import { initializeVerifierFlow, VerifierClientId, VerifierMetadata, } from '@trustknots/vcknots/verifier';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createApp } from './app.js';
+export const createServer = (options) => {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const samplesDir = join(__dirname, '../../samples');
+    const issuerMetadataConfigRaw = JSON.parse(readFileSync(join(samplesDir, 'issuer_metadata.json'), 'utf-8'));
+    const authorizationMetadataConfigRaw = JSON.parse(readFileSync(join(samplesDir, 'authorization_metadata.json'), 'utf-8'));
+    const authzOAuthPolicyConfigRaw = JSON.parse(readFileSync(join(samplesDir, 'oauth-server.json'), 'utf-8'));
+    const oauthClientsConfigRaw = JSON.parse(readFileSync(join(samplesDir, 'oauth-clients.json'), 'utf-8'));
+    const verifierMetadataConfigRaw = JSON.parse(readFileSync(join(samplesDir, 'verifier_metadata.json'), 'utf-8'));
+    const issuerMetadataConfig = CredentialIssuerMetadata(issuerMetadataConfigRaw);
+    const authorizationMetadataConfig = AuthorizationServerMetadata(authorizationMetadataConfigRaw);
+    const authzOAuthPolicyConfig = AuthzOAuthPolicy(authzOAuthPolicyConfigRaw.authorization_server);
+    const oauthClientsConfig = AuthzOAuthClients(oauthClientsConfigRaw);
+    const verifierMetadataConfig = VerifierMetadata(verifierMetadataConfigRaw);
+    const context = initializeContext({
+        ...options,
+        debug: process.env.NODE_ENV !== 'production',
+    });
+    const issuerFlow = initializeIssuerFlow(context);
+    const authzFlow = initializeAuthzFlow(context);
+    const verifierFlow = initializeVerifierFlow(context);
+    const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080';
+    const app = createApp(context, baseUrl);
+    async function main() {
+        if (!(await initializeVerifierMetadata(baseUrl, verifierMetadataConfig))) {
+            throw new Error('Failed to initialize verifier metadata');
+        }
+        issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl);
+        issuerMetadataConfig.authorization_servers = [baseUrl];
+        issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`;
+        issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`;
+        issuerMetadataConfig.nonce_endpoint = `${baseUrl}/nonce`;
+        if (!(await initializeIssuerMetadata(issuerMetadataConfig))) {
+            throw new Error('Failed to initialize issuer metadata');
+        }
+        authorizationMetadataConfig.issuer = AuthorizationServerIssuer(baseUrl);
+        authorizationMetadataConfig.authorization_endpoint = `${baseUrl}/authorize`;
+        authorizationMetadataConfig.token_endpoint = `${baseUrl}/token`;
+        if (!(await initializeAuthzMetadata(authorizationMetadataConfig))) {
+            throw new Error('Failed to initialize authz metadata');
+        }
+        if (!(await initializeAuthzOAuthPolicy(AuthorizationServerIssuer(baseUrl), authzOAuthPolicyConfig))) {
+            throw new Error('Failed to initialize authz OAuth policy');
+        }
+        if (!(await initializeAuthzOAuthClients(AuthorizationServerIssuer(baseUrl), oauthClientsConfig.clients))) {
+            throw new Error('Failed to initialize authz OAuth clients');
+        }
+        serve({ fetch: app.fetch, port: Number.parseInt(process.env.PORT ?? '8080') }, async () => {
+            console.log(`Server is running on ${baseUrl}`);
+        });
+    }
+    main().catch((error) => {
+        console.error('Fatal: Server startup failed', error);
+        process.exit(1);
+    });
+    async function initializeIssuerMetadata(issuerMetadata) {
+        try {
+            const issuer = await issuerFlow.findIssuerMetadata(issuerMetadata.credential_issuer);
+            if (issuer) {
+                console.log('Issuer metadata already exists, skipping initialization');
+                return true;
+            }
+            await issuerFlow.createIssuerMetadata(issuerMetadata);
+            console.log('Issuer metadata initialized');
+            return true;
+        }
+        catch (error) {
+            console.error('Error initializing issuer metadata:', error);
+            return false;
+        }
+    }
+    async function initializeAuthzMetadata(authzMetadata) {
+        try {
+            const authzServer = await authzFlow.findAuthzServerMetadata(authzMetadata.issuer);
+            if (authzServer) {
+                console.log('Authz metadata already exists, skipping initialization');
+                return true;
+            }
+            await authzFlow.createAuthzServerMetadata(authzMetadata);
+            console.log('Authz metadata initialized');
+            return true;
+        }
+        catch (error) {
+            console.error('Error initializing authz metadata:', error);
+            return false;
+        }
+    }
+    async function initializeAuthzOAuthPolicy(authz, policy) {
+        try {
+            const current = await authzFlow.findAuthzOAuthPolicy(authz);
+            if (current) {
+                console.log('Authz OAuth policy already exists, skipping initialization');
+                return true;
+            }
+            await authzFlow.createAuthzOAuthPolicy(authz, policy);
+            console.log('Authz OAuth policy initialized');
+            return true;
+        }
+        catch (error) {
+            console.error('Error initializing authz OAuth policy:', error);
+            return false;
+        }
+    }
+    async function initializeAuthzOAuthClients(authz, clients) {
+        try {
+            for (const client of clients) {
+                const current = await authzFlow.findAuthzOAuthClient(authz, client.client_id);
+                if (current) {
+                    console.log(`Authz OAuth client already exists, skipping initialization: ${client.client_id}`);
+                    continue;
+                }
+                await authzFlow.createAuthzOAuthClient(authz, client);
+                console.log(`Authz OAuth client initialized: ${client.client_id}`);
+            }
+            return true;
+        }
+        catch (error) {
+            console.error('Error initializing authz OAuth clients:', error);
+            return false;
+        }
+    }
+    async function initializeVerifierMetadata(verifierId, metadata) {
+        try {
+            const clientId = VerifierClientId(verifierId);
+            const verifier = await verifierFlow.findVerifierMetadata(clientId);
+            if (verifier) {
+                console.log('Verifier metadata already exists, skipping initialization');
+                return true;
+            }
+            const verifierCertificate = await verifierFlow.findVerifierCertificate(clientId);
+            if (verifierCertificate && verifierCertificate.length > 0) {
+                console.log('Verifier certificate already exists, skipping initialization');
+                return true;
+            }
+            const defaultPrivateKeyPath = join(__dirname, '../../samples/certificate-openid-test/private_key_openid.pem');
+            const defaultCertPath = join(__dirname, '../../samples/certificate-openid-test/certificate_openid.pem');
+            const privateKeyPath = process.env.PRIVATE_KEY_PATH
+                ? resolve(process.env.PRIVATE_KEY_PATH)
+                : defaultPrivateKeyPath;
+            const certificatePath = process.env.CERTIFICATE_PATH
+                ? resolve(process.env.CERTIFICATE_PATH)
+                : defaultCertPath;
+            const privateKeyEnv = process.env.PRIVATE_KEY?.replace(/\\n/g, '\n');
+            const certificateEnv = process.env.CERTIFICATE?.replace(/\\n/g, '\n');
+            const privateKey = privateKeyEnv ?? readFileSync(privateKeyPath, 'utf-8');
+            const certificate = certificateEnv ?? readFileSync(certificatePath, 'utf-8');
+            const option = { privateKey, certificate, format: 'pem', alg: 'ES256' };
+            await verifierFlow.createVerifierMetadata(clientId, metadata, option);
+            console.log(`Verifier metadata initialized for ${clientId}`);
+            return true;
+        }
+        catch (error) {
+            console.error('Error initializing verifier metadata:', error);
+            return false;
+        }
+    }
+};

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VCKnots User メダル発行所 (Issuer)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    :root {
+      --focus-color: var(--color-issuer);
+    }
+    #resultArea {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <span class="badge badge-issuer">Issuer / 発行者</span>
+      <h1 style="margin-top: 0.5rem;">🏅 VCKnots User メダル発行所</h1>
+      <p>あなたの名前を入力して、世界に1つだけの VCKnots User メダル(VC)を発行しましょう！</p>
+    </header>
+
+    <!-- 発行フォーム -->
+    <div class="card" id="inputCard">
+      <div class="card-title">
+        <span>📝 ユーザー情報の登録</span>
+      </div>
+      
+      <div class="form-group">
+        <label for="username">あなたのユーザー名 (Username)</label>
+        <input type="text" id="username" placeholder="例: Taro, Alice など" value="VCKnots Explorer">
+      </div>
+
+      <button class="btn" id="btnIssue" style="--btn-color: var(--color-issuer);">
+        <span>🏅 メダルを発行する</span>
+      </button>
+    </div>
+
+    <!-- 発行結果表示（QRコード・Offer URL） -->
+    <div class="card" id="resultArea">
+      <div class="card-title" style="border-color: var(--color-issuer); color: var(--color-issuer);">
+        <span>🎉 メダルの発行が完了しました！</span>
+      </div>
+      
+      <p style="text-align: center; margin-bottom: 1rem;">
+        Wallet アプリでこのQRコードを読み取るか、Offer URLをコピーして Wallet に貼り付けてメダルを受け取ってください。
+      </p>
+
+      <!-- QRコード描画エリア -->
+      <div class="qr-container">
+        <canvas id="qrCanvas"></canvas>
+        <span class="badge badge-issuer" id="medalBadge">🏅 VCKnots User Medal</span>
+      </div>
+
+      <div class="copy-area">
+        <label>Offer URL (コピペ用):</label>
+        <div class="copy-box">
+          <input type="text" id="offerUrl" readonly class="copy-input">
+          <button class="btn btn-copy" id="btnCopy" style="--btn-color: var(--text-secondary);">コピー</button>
+        </div>
+        <p id="copyStatus" style="color: var(--color-success); font-size: 0.9rem; margin-top: 0.5rem; text-align: right; display: none; font-weight: 500;">
+          ✓ コピーしました！
+        </p>
+      </div>
+
+      <button class="btn" id="btnReset" style="--btn-color: var(--text-secondary); margin-top: 1.5rem; background-color: #f3f4f6; color: var(--text-primary);">
+        <span>← 新しく作り直す</span>
+      </button>
+    </div>
+
+    <footer>
+      <p>&copy; 2026 VCKnots Project - Powered by VCKnots Library</p>
+    </footer>
+  </div>
+
+  <!-- QRコード生成ライブラリ (QRious) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <script>
+    const btnIssue = document.getElementById('btnIssue');
+    const btnReset = document.getElementById('btnReset');
+    const btnCopy = document.getElementById('btnCopy');
+    const inputCard = document.getElementById('inputCard');
+    const resultArea = document.getElementById('resultArea');
+    const usernameInput = document.getElementById('username');
+    const offerUrlInput = document.getElementById('offerUrl');
+    const copyStatus = document.getElementById('copyStatus');
+    const qrCanvas = document.getElementById('qrCanvas');
+
+    // 1. メダル発行＆セットアップAPIの呼び出し
+    btnIssue.addEventListener('click', async () => {
+      const username = usernameInput.value.trim();
+      if (!username) {
+        alert('ユーザー名を入力してください！');
+        return;
+      }
+
+      btnIssue.disabled = true;
+      btnIssue.innerHTML = '<span class="spinner"></span> <span>発行中...</span>';
+
+      try {
+        // A. ユーザー設定APIを叩く
+        const setupResponse = await fetch('/api/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        const setupData = await setupResponse.json();
+        if (!setupResponse.ok) {
+          throw new Error(setupData.error || 'Setup failed');
+        }
+
+        // B. Hono の Offer 生成 API を叩く
+        const offerResponse = await fetch('/configurations/VCKnotsUserMedal/offer', {
+          method: 'POST'
+        });
+        const offerUrl = await offerResponse.text();
+
+        if (!offerResponse.ok) {
+          throw new Error('Offer URL generation failed');
+        }
+
+        // C. 画面切り替えとQRコードレンダリング
+        offerUrlInput.value = offerUrl;
+        
+        // QRコード生成
+        new QRious({
+          element: qrCanvas,
+          value: offerUrl,
+          size: 180,
+          background: '#ffffff',
+          foreground: '#1f2937',
+          level: 'H'
+        });
+
+        document.getElementById('medalBadge').innerText = `🏅 ${username}'s Medal`;
+
+        inputCard.style.display = 'none';
+        resultArea.style.display = 'block';
+
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+      } finally {
+        btnIssue.disabled = false;
+        btnIssue.innerHTML = '<span>🏅 メダルを発行する</span>';
+      }
+    });
+
+    // コピー機能
+    btnCopy.addEventListener('click', () => {
+      offerUrlInput.select();
+      document.execCommand('copy');
+      
+      copyStatus.style.display = 'block';
+      setTimeout(() => {
+        copyStatus.style.display = 'none';
+      }, 2000);
+    });
+
+    // リセット
+    btnReset.addEventListener('click', () => {
+      inputCard.style.display = 'block';
+      resultArea.style.display = 'none';
+      usernameInput.value = '';
+    });
+  </script>
+</body>
+</html>
