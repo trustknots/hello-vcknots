@@ -1,6 +1,6 @@
 packages:
-  - issuer-verifier
-  - server-core
+  - server/issuer-verifier
+  - server/server-core
 
 allowBuilds:
   esbuild: true
