@@ -8,14 +8,10 @@ export const globalState = {
     lastVerifiedUsername: '',
     verificationStatus: 'idle', // 'idle' | 'verified'
 };
-export const createCustomRouter = (context, baseUrl) => {
+export const createIssuerCustomRouter = (context, issuerBaseUrl) => {
     const router = new Hono();
     const issuerFlow = initializeIssuerFlow(context);
     const authzFlow = initializeAuthzFlow(context);
-    const verifierFlow = initializeVerifierFlow(context);
-    // state → transactionId のローカルマップ (カスタム /callback で参照するため)
-    const stateToTransactionId = new Map();
-    // 1. デモ管理用の独自API
     router.post('/api/setup', async (c) => {
         try {
             const body = await c.req.json().catch(() => ({}));
@@ -31,67 +27,10 @@ export const createCustomRouter = (context, baseUrl) => {
             return c.json({ error: message }, 500);
         }
     });
-    router.get('/api/status', (c) => {
-        return c.json({
-            status: globalState.verificationStatus,
-            username: globalState.lastVerifiedUsername,
-        });
-    });
-    // 2. /request エンドポイント (state → transactionId をローカル管理)
-    router.post('/request', async (c) => {
-        try {
-            const verifierId = VerifierClientId(baseUrl);
-            const body = await c.req.json().catch(() => ({}));
-            const inputQuery = typeof body.query === 'object' && body.query !== null && !Array.isArray(body.query)
-                ? body.query
-                : undefined;
-            const credentialId = typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
-                ? body.credentialId
-                : undefined;
-            if (!credentialId && !inputQuery) {
-                return c.json({ error: 'invalid_request', error_description: 'credentialId is required' }, 400);
-            }
-            const state = typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined;
-            if (!state) {
-                return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400);
-            }
-            const query = inputQuery ?? {
-                dcql_query: {
-                    credentials: [
-                        {
-                            id: randomUUID(),
-                            format: 'jwt_vc_json',
-                            meta: {
-                                type_values: [[credentialId]],
-                            },
-                        },
-                    ],
-                },
-            };
-            const { request, transactionId } = await verifierFlow.createAuthzRequest(verifierId, 'vp_token', ClientIdentifier('redirect_uri:localhost'), 'direct_post', query, false, {
-                state,
-                response_uri: `${baseUrl}/callback`,
-                base_url: baseUrl,
-            });
-            stateToTransactionId.set(state, transactionId);
-            const encoded = Object.entries({ ...request, state })
-                .map(([key, value]) => {
-                const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value);
-                return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`;
-            })
-                .join('&');
-            return c.text(`openid4vp://authorize?${encoded}`);
-        }
-        catch (err) {
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            return c.json({ error: 'internal_server_error', error_description: message }, 500);
-        }
-    });
-    // 3. Offer エンドポイントのオーバーライド
     router.post('/configurations/:configuration/offer', async (c) => {
         try {
             const configuration = c.req.param('configuration');
-            const issuer = CredentialIssuer(baseUrl);
+            const issuer = CredentialIssuer(issuerBaseUrl);
             const { offer } = await issuerFlow.offerCredential(issuer, [CredentialConfigurationId(configuration)], {
                 usePreAuth: true,
                 ttlSec: 600,
@@ -105,17 +44,16 @@ export const createCustomRouter = (context, baseUrl) => {
             return c.json({ error: message }, 400);
         }
     });
-    // 4. /credentials エンドポイントのオーバーライド (username を claims にインジェクト)
     router.post('/credentials', async (c) => {
-        const issuer = CredentialIssuer(baseUrl);
-        const authz = AuthorizationServerIssuer(baseUrl);
+        const issuer = CredentialIssuer(issuerBaseUrl);
+        const authz = AuthorizationServerIssuer(issuerBaseUrl);
         let authorizationContext;
         try {
             authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
                 authorizationHeader: c.req.header('Authorization'),
                 dpopHeader: c.req.header('DPoP'),
                 htm: c.req.method,
-                htu: `${baseUrl}/credentials`,
+                htu: `${issuerBaseUrl}/credentials`,
                 nonceRequired: true,
             });
         }
@@ -156,7 +94,67 @@ export const createCustomRouter = (context, baseUrl) => {
             return c.json({ error: 'invalid_request', error_description: message }, 400);
         }
     });
-    // 5. /callback (Verifier) エンドポイントのオーバーライド
+    return router;
+};
+export const createVerifierCustomRouter = (context, verifierBaseUrl) => {
+    const router = new Hono();
+    const verifierFlow = initializeVerifierFlow(context);
+    const stateToTransactionId = new Map();
+    router.get('/api/status', (c) => {
+        return c.json({
+            status: globalState.verificationStatus,
+            username: globalState.lastVerifiedUsername,
+        });
+    });
+    router.post('/request', async (c) => {
+        try {
+            const verifierId = VerifierClientId(verifierBaseUrl);
+            const body = await c.req.json().catch(() => ({}));
+            const inputQuery = typeof body.query === 'object' && body.query !== null && !Array.isArray(body.query)
+                ? body.query
+                : undefined;
+            const credentialId = typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
+                ? body.credentialId
+                : undefined;
+            if (!credentialId && !inputQuery) {
+                return c.json({ error: 'invalid_request', error_description: 'credentialId is required' }, 400);
+            }
+            const state = typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined;
+            if (!state) {
+                return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400);
+            }
+            const query = inputQuery ?? {
+                dcql_query: {
+                    credentials: [
+                        {
+                            id: randomUUID(),
+                            format: 'jwt_vc_json',
+                            meta: {
+                                type_values: [[credentialId]],
+                            },
+                        },
+                    ],
+                },
+            };
+            const { request, transactionId } = await verifierFlow.createAuthzRequest(verifierId, 'vp_token', ClientIdentifier('redirect_uri:localhost'), 'direct_post', query, false, {
+                state,
+                response_uri: `${verifierBaseUrl}/callback`,
+                base_url: verifierBaseUrl,
+            });
+            stateToTransactionId.set(state, transactionId);
+            const encoded = Object.entries({ ...request, state })
+                .map(([key, value]) => {
+                const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value);
+                return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`;
+            })
+                .join('&');
+            return c.text(`openid4vp://authorize?${encoded}`);
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            return c.json({ error: 'internal_server_error', error_description: message }, 500);
+        }
+    });
     router.post('/callback', async (c) => {
         try {
             const formData = await c.req.formData();
@@ -183,7 +181,6 @@ export const createCustomRouter = (context, baseUrl) => {
             const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId);
             stateToTransactionId.delete(state);
             console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload));
-            // 検証に成功したVCから username を抽出する
             let verifiedUsername = 'VCKnots Explorer';
             try {
                 const allVps = Object.values(vpPayload).flat();
@@ -210,7 +207,7 @@ export const createCustomRouter = (context, baseUrl) => {
             globalState.lastVerifiedUsername = verifiedUsername;
             globalState.verificationStatus = 'verified';
             console.log(`[hello-vcknots] Verifier successfully verified medal for: "${verifiedUsername}"`);
-            return c.json({ redirect_uri: `${baseUrl}/verified.html` }, 200);
+            return c.json({ redirect_uri: `${verifierBaseUrl}/verified.html` }, 200);
         }
         catch (err) {
             const message = err instanceof Error ? err.message : 'Unknown error';

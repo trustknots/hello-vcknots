@@ -10,16 +10,18 @@ VCKnots の「Hello World」として、新しく VCKnots の世界に足を踏�
 
 ## 🏗 アプリケーション構成
 
-- **Issuer & Verifier サーバー (TypeScript / Hono)**
+- **Issuer サーバー (TypeScript / Hono)**
   - ポート: `http://localhost:8080`
-  - 役割: ユーザー名から「VCKnots User メダル」を発行する（OID4VCI）、および提示されたメダルを検証して歓迎メッセージを表示する（OID4VP & ポーリング）。
-  - UI 画面:
-    - Issuer: `http://localhost:8080/issuer.html`
-    - Verifier: `http://localhost:8080/verifier.html`
-- **Wallet サーバー & Web UI (Go)**
+  - 役割: ユーザー名から「VCKnots User メダル」を発行する（OID4VCI）。
+  - UI 画面: `http://localhost:8080/issuer.html`
+- **Verifier サーバー (TypeScript / Hono)**
   - ポート: `http://localhost:8081`
+  - 役割: 提示されたメダルを検証して歓迎メッセージを表示する（OID4VP & ポーリング）。
+  - UI 画面: `http://localhost:8081/verifier.html`
+- **Wallet サーバー & Web UI (Go)**
+  - ポート: `http://localhost:8082`
   - 役割: メダルを獲得・保管し、検証者へ提示する。
-  - UI 画面: `http://localhost:8081` (マイ・メダルホルダー)
+  - UI 画面: `http://localhost:8082` (マイ・メダルホルダー)
 
 ---
 
@@ -47,12 +49,14 @@ pnpm dev
 起動が完了すると、コンソールに以下のように表示されます：
 
 ```
-🎉 hello-vcknots Issuer/Verifier Server is running!
-👉 Issuer Web UI  : http://localhost:8080/issuer.html
-👉 Verifier Web UI: http://localhost:8080/verifier.html
+hello-vcknots Issuer Server is running!
+Issuer Web UI  : http://localhost:8080/issuer.html
 
-🎉 hello-vcknots Go Wallet Server is running!
-👉 Wallet Web UI: http://localhost:8081
+hello-vcknots Verifier Server is running!
+Verifier Web UI: http://localhost:8081/verifier.html
+
+hello-vcknots Go Wallet Server is running!
+Wallet Web UI: http://localhost:8082
 ```
 
 ---
@@ -62,8 +66,8 @@ pnpm dev
 起動後、ブラウザで以下の3つのタブ（またはウィンドウ）を開いて、ストーリーに沿って操作します。
 
 1. **Issuer 画面**: `http://localhost:8080/issuer.html`
-2. **Verifier 画面**: `http://localhost:8080/verifier.html`
-3. **Wallet 画面**: `http://localhost:8081`
+2. **Verifier 画面**: `http://localhost:8081/verifier.html`
+3. **Wallet 画面**: `http://localhost:8082`
 
 ### ステップ 1: メダル(VC)の発行（OID4VCI）
 
@@ -74,7 +78,7 @@ pnpm dev
 
 ### ステップ 2: メダルの獲得と保管（Wallet）
 
-1. **Wallet 画面** (`http://localhost:8081`) を開きます。
+1. **Wallet 画面** (`http://localhost:8082`) を開きます。
 2. アクションエリアの **「メダルを追加 (Receive Medal)」** タブ（初期選択）にある入力欄に、コピーした **Offer URL** をペーストします。
 3. **「メダルを獲得する (Receive)」** ボタンをクリックします。
 4. OID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VCKnots User Medal」** カードが追加されます！
@@ -82,11 +86,11 @@ pnpm dev
 
 ### ステップ 3: メダルの提示と検証（OID4VP）
 
-1. **Verifier 画面** (`http://localhost:8080/verifier.html`) を開きます。
+1. **Verifier 画面** (`http://localhost:8081/verifier.html`) を開きます。
 2. 画面の **「検証を開始する」** ボタンをクリックします。
 3. 画面上に OID4VP の **Presentation Request URL** とQRコードが表示され、自動的にステータス監視（ポーリング）が開始されます。
 4. **「Copy Request URL」** ボタンを押して、生成された URL をクリップボードにコピーします。
-5. **Wallet 画面** (`http://localhost:8081`) に戻ります。
+5. **Wallet 画面** (`http://localhost:8082`) に戻ります。
 6. アクションエリアの **「メダルを提示 (Present Medal)」** タブに切り替えます。
 7. 入力欄に、コピーした **Request URL** をペーストし、**「提示する (Present)」** ボタンをクリックします。
 8. 提示が成功すると、Wallet 側で「提示に成功しました！」と表示されます。

@@ -12,11 +12,25 @@ import { initializeVerifierFlow, VerifierClientId, VerifierMetadata } from '@tru
 import { createAuthzRouter } from '@trustknots/server-core/routes/authz';
 import { createIssueRouter } from '@trustknots/server-core/routes/issue';
 import { createVerifierRouter } from '@trustknots/server-core/routes/verify';
-import { createCustomRouter } from './app/routes.js';
+import { createIssuerCustomRouter, createVerifierCustomRouter } from './app/routes.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
+function portFromUrl(url) {
+    try {
+        const port = new URL(url).port;
+        return port ? Number.parseInt(port) : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 async function run() {
-    const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080';
-    const port = Number.parseInt(process.env.PORT ?? '8080');
+    const issuerBaseUrl = process.env.ISSUER_BASE_URL ?? process.env.BASE_URL ?? 'http://localhost:8080';
+    const issuerPort = Number.parseInt(process.env.ISSUER_PORT ?? process.env.PORT ?? String(portFromUrl(issuerBaseUrl) ?? 8080));
+    const verifierBaseUrl = process.env.VERIFIER_BASE_URL ?? process.env.BASE_URL ?? issuerBaseUrl;
+    const verifierPort = Number.parseInt(process.env.VERIFIER_PORT ??
+        (process.env.VERIFIER_BASE_URL
+            ? String(portFromUrl(verifierBaseUrl) ?? issuerPort)
+            : String(issuerPort)));
     const projectDir = resolve(__dirname, '..');
     const configDir = process.env.ISSUER_VERIFIER_CONFIG_DIR ?? join(projectDir, 'config');
     const metadataDir = join(configDir, 'metadata');
@@ -29,7 +43,7 @@ async function run() {
     const authzFlow = initializeAuthzFlow(context);
     const verifierFlow = initializeVerifierFlow(context);
     async function initMetadata() {
-        const clientId = VerifierClientId(baseUrl);
+        const clientId = VerifierClientId(verifierBaseUrl);
         const existingVerifier = await verifierFlow.findVerifierMetadata(clientId);
         if (!existingVerifier) {
             const privateKeyPath = process.env.VERIFIER_PRIVATE_KEY_PATH ?? join(keyDir, 'private_key_openid.pem');
@@ -44,19 +58,19 @@ async function run() {
             });
             console.log(`[hello-vcknots] Verifier metadata initialized for ${clientId}`);
         }
-        issuerMetadataConfig.credential_issuer = CredentialIssuer(baseUrl);
-        issuerMetadataConfig.authorization_servers = [baseUrl];
-        issuerMetadataConfig.credential_endpoint = `${baseUrl}/credentials`;
-        issuerMetadataConfig.deferred_credential_endpoint = `${baseUrl}/deferred_credential`;
-        issuerMetadataConfig.nonce_endpoint = `${baseUrl}/nonce`;
+        issuerMetadataConfig.credential_issuer = CredentialIssuer(issuerBaseUrl);
+        issuerMetadataConfig.authorization_servers = [issuerBaseUrl];
+        issuerMetadataConfig.credential_endpoint = `${issuerBaseUrl}/credentials`;
+        issuerMetadataConfig.deferred_credential_endpoint = `${issuerBaseUrl}/deferred_credential`;
+        issuerMetadataConfig.nonce_endpoint = `${issuerBaseUrl}/nonce`;
         const existingIssuer = await issuerFlow.findIssuerMetadata(issuerMetadataConfig.credential_issuer);
         if (!existingIssuer) {
             await issuerFlow.createIssuerMetadata(issuerMetadataConfig);
             console.log('[hello-vcknots] Issuer metadata initialized');
         }
-        authorizationMetadataConfig.issuer = AuthorizationServerIssuer(baseUrl);
-        authorizationMetadataConfig.authorization_endpoint = `${baseUrl}/authorize`;
-        authorizationMetadataConfig.token_endpoint = `${baseUrl}/token`;
+        authorizationMetadataConfig.issuer = AuthorizationServerIssuer(issuerBaseUrl);
+        authorizationMetadataConfig.authorization_endpoint = `${issuerBaseUrl}/authorize`;
+        authorizationMetadataConfig.token_endpoint = `${issuerBaseUrl}/token`;
         const existingAuthz = await authzFlow.findAuthzServerMetadata(authorizationMetadataConfig.issuer);
         if (!existingAuthz) {
             await authzFlow.createAuthzServerMetadata(authorizationMetadataConfig);
@@ -66,29 +80,71 @@ async function run() {
     await initMetadata().catch((err) => {
         console.error('Metadata initialization warning:', err);
     });
-    const app = new Hono();
-    app.route('/', createCustomRouter(context, baseUrl));
-    app.route('/', createIssueRouter(context, baseUrl));
-    app.route('/', createAuthzRouter(context, baseUrl));
-    app.route('/', createVerifierRouter(context, baseUrl));
     const publicDir = resolve(projectDir, 'public');
-    app.use('/verifier.html', async (c, next) => {
-        await next();
-        c.header('Cache-Control', 'no-store');
-    });
-    app.use('/*', serveStatic({ root: publicDir }));
-    app.notFound((c) => c.text('404 Not Found', 404));
-    app.onError((err, c) => {
-        console.error('[hello-vcknots] Hono Server Error:', err);
-        return c.json({ error: 'internal_server_error', message: err.message }, 500);
-    });
-    serve({ fetch: app.fetch, port }, () => {
-        console.log(`\n======================================================`);
-        console.log(`hello-vcknots Issuer/Verifier Server is running!`);
-        console.log(`Issuer Web UI  : http://localhost:${port}/issuer.html`);
-        console.log(`Verifier Web UI: http://localhost:${port}/verifier.html`);
-        console.log(`======================================================\n`);
-    });
+    if (issuerPort === verifierPort) {
+        const app = new Hono();
+        app.route('/', createIssuerCustomRouter(context, issuerBaseUrl));
+        app.route('/', createIssueRouter(context, issuerBaseUrl));
+        app.route('/', createAuthzRouter(context, issuerBaseUrl));
+        app.route('/', createVerifierCustomRouter(context, verifierBaseUrl));
+        app.route('/', createVerifierRouter(context, verifierBaseUrl));
+        app.use('/verifier.html', async (c, next) => {
+            await next();
+            c.header('Cache-Control', 'no-store');
+        });
+        app.use('/*', serveStatic({ root: publicDir }));
+        app.notFound((c) => c.text('404 Not Found', 404));
+        app.onError((err, c) => {
+            console.error('[hello-vcknots] Hono Server Error:', err);
+            return c.json({ error: 'internal_server_error', message: err.message }, 500);
+        });
+        serve({ fetch: app.fetch, port: issuerPort }, () => {
+            console.log(`\n======================================================`);
+            console.log(`hello-vcknots Issuer/Verifier Server is running!`);
+            console.log(`Issuer Web UI  : ${issuerBaseUrl}/issuer.html`);
+            console.log(`Verifier Web UI: ${verifierBaseUrl}/verifier.html`);
+            console.log(`======================================================\n`);
+        });
+    }
+    else {
+        const issuerApp = new Hono();
+        issuerApp.route('/', createIssuerCustomRouter(context, issuerBaseUrl));
+        issuerApp.route('/', createIssueRouter(context, issuerBaseUrl));
+        issuerApp.route('/', createAuthzRouter(context, issuerBaseUrl));
+        issuerApp.get('/verifier.html', (c) => c.text('404 Not Found', 404));
+        issuerApp.use('/*', serveStatic({ root: publicDir }));
+        issuerApp.notFound((c) => c.text('404 Not Found', 404));
+        issuerApp.onError((err, c) => {
+            console.error('[hello-vcknots] Issuer Server Error:', err);
+            return c.json({ error: 'internal_server_error', message: err.message }, 500);
+        });
+        const verifierApp = new Hono();
+        verifierApp.route('/', createVerifierCustomRouter(context, verifierBaseUrl));
+        verifierApp.route('/', createVerifierRouter(context, verifierBaseUrl));
+        verifierApp.get('/issuer.html', (c) => c.text('404 Not Found', 404));
+        verifierApp.use('/verifier.html', async (c, next) => {
+            await next();
+            c.header('Cache-Control', 'no-store');
+        });
+        verifierApp.use('/*', serveStatic({ root: publicDir }));
+        verifierApp.notFound((c) => c.text('404 Not Found', 404));
+        verifierApp.onError((err, c) => {
+            console.error('[hello-vcknots] Verifier Server Error:', err);
+            return c.json({ error: 'internal_server_error', message: err.message }, 500);
+        });
+        serve({ fetch: issuerApp.fetch, port: issuerPort }, () => {
+            console.log(`\n======================================================`);
+            console.log(`hello-vcknots Issuer Server is running!`);
+            console.log(`Issuer Web UI  : ${issuerBaseUrl}/issuer.html`);
+            console.log(`======================================================\n`);
+        });
+        serve({ fetch: verifierApp.fetch, port: verifierPort }, () => {
+            console.log(`\n======================================================`);
+            console.log(`hello-vcknots Verifier Server is running!`);
+            console.log(`Verifier Web UI: ${verifierBaseUrl}/verifier.html`);
+            console.log(`======================================================\n`);
+        });
+    }
 }
 run().catch((error) => {
     console.error('[hello-vcknots] Fatal Server crash:', error);

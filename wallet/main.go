@@ -190,7 +190,7 @@ func main() {
 	http.HandleFunc("/api/receive", handleReceiveCredential)
 	http.HandleFunc("/api/present", handlePresentCredential)
 
-	port := "8081"
+	port := "8082"
 	log.Printf("\n======================================================")
 	log.Printf("🎉 hello-vcknots Go Wallet Server is running!")
 	log.Printf("👉 Wallet Web UI: http://localhost:%s", port)

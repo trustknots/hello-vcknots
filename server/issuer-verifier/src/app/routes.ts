@@ -21,17 +21,11 @@ export const globalState = {
   verificationStatus: 'idle', // 'idle' | 'verified'
 }
 
-export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => {
+export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl: string) => {
   const router = new Hono()
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
-  const verifierFlow = initializeVerifierFlow(context)
-  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
 
-  // state → transactionId のローカルマップ (カスタム /callback で参照するため)
-  const stateToTransactionId = new Map<string, string>()
-
-  // 1. デモ管理用の独自API
   router.post('/api/setup', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}))
@@ -47,6 +41,91 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
     }
   })
 
+  router.post('/configurations/:configuration/offer', async (c) => {
+    try {
+      const configuration = c.req.param('configuration')
+      const issuer = CredentialIssuer(issuerBaseUrl)
+
+      const { offer } = await issuerFlow.offerCredential(issuer, [CredentialConfigurationId(configuration)], {
+        usePreAuth: true,
+        ttlSec: 600,
+      })
+
+      console.log(`[hello-vcknots] Generated offer for ${configuration}. Code-preauth.`)
+      return c.text(
+        `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
+      )
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[hello-vcknots] Offer error:', err)
+      return c.json({ error: message }, 400)
+    }
+  })
+
+  router.post('/credentials', async (c) => {
+    const issuer = CredentialIssuer(issuerBaseUrl)
+    const authz = AuthorizationServerIssuer(issuerBaseUrl)
+
+    let authorizationContext: Awaited<ReturnType<typeof authzFlow.authorizeCredentialEndpointAccess>>
+    try {
+      authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
+        authorizationHeader: c.req.header('Authorization'),
+        dpopHeader: c.req.header('DPoP'),
+        htm: c.req.method,
+        htu: `${issuerBaseUrl}/credentials`,
+        nonceRequired: true,
+      })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Token is required'
+      return c.json({ error: 'invalid_token', error_description: message }, 401)
+    }
+
+    const requestBody = await c.req.json().catch(() => null)
+    if (!requestBody) {
+      return c.json({ error: 'invalid_request', error_description: 'Request body must be valid JSON' }, 400)
+    }
+    const parseResult = CredentialRequest.schema.safeParse(requestBody)
+    if (!parseResult.success) {
+      return c.json({ error: 'invalid_request', error_description: 'Invalid CredentialRequest' }, 400)
+    }
+
+    const claims = {
+      username: globalState.currentUsername,
+      issued_at: new Date().toISOString(),
+      medal_type: 'VCKnots User Medal',
+      user_level: 'Beginner',
+    }
+
+    console.log(`[hello-vcknots] Issuing VCKnotsUserMedal to user: "${claims.username}"`)
+
+    try {
+      const credential = await issuerFlow.issueCredential(issuer, parseResult.data, {
+        authorizationContext,
+        alg: 'ES256',
+        cnonce: {
+          c_nonce_expires_in: 300000,
+        },
+        claims,
+        proofJwt: { usePreAuth: true },
+      })
+      return c.json(credential)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[hello-vcknots] Credential issue error:', err)
+      return c.json({ error: 'invalid_request', error_description: message }, 400)
+    }
+  })
+
+  return router
+}
+
+export const createVerifierCustomRouter = (context: VcknotsContext, verifierBaseUrl: string) => {
+  const router = new Hono()
+  const verifierFlow = initializeVerifierFlow(context)
+  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
+
+  const stateToTransactionId = new Map<string, string>()
+
   router.get('/api/status', (c) => {
     return c.json({
       status: globalState.verificationStatus,
@@ -54,10 +133,9 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
     })
   })
 
-  // 2. /request エンドポイント (state → transactionId をローカル管理)
   router.post('/request', async (c) => {
     try {
-      const verifierId = VerifierClientId(baseUrl)
+      const verifierId = VerifierClientId(verifierBaseUrl)
       const body: Record<string, unknown> = await c.req.json<Record<string, unknown>>().catch(() => ({}))
 
       const inputQuery =
@@ -102,8 +180,8 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
         false,
         {
           state,
-          response_uri: `${baseUrl}/callback`,
-          base_url: baseUrl,
+          response_uri: `${verifierBaseUrl}/callback`,
+          base_url: verifierBaseUrl,
         }
       )
 
@@ -123,84 +201,6 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
     }
   })
 
-  // 3. Offer エンドポイントのオーバーライド
-  router.post('/configurations/:configuration/offer', async (c) => {
-    try {
-      const configuration = c.req.param('configuration')
-      const issuer = CredentialIssuer(baseUrl)
-
-      const { offer } = await issuerFlow.offerCredential(issuer, [CredentialConfigurationId(configuration)], {
-        usePreAuth: true,
-        ttlSec: 600,
-      })
-
-      console.log(`[hello-vcknots] Generated offer for ${configuration}. Code-preauth.`)
-      return c.text(
-        `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}`
-      )
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[hello-vcknots] Offer error:', err)
-      return c.json({ error: message }, 400)
-    }
-  })
-
-  // 4. /credentials エンドポイントのオーバーライド (username を claims にインジェクト)
-  router.post('/credentials', async (c) => {
-    const issuer = CredentialIssuer(baseUrl)
-    const authz = AuthorizationServerIssuer(baseUrl)
-
-    let authorizationContext: Awaited<ReturnType<typeof authzFlow.authorizeCredentialEndpointAccess>>
-    try {
-      authorizationContext = await authzFlow.authorizeCredentialEndpointAccess(authz, {
-        authorizationHeader: c.req.header('Authorization'),
-        dpopHeader: c.req.header('DPoP'),
-        htm: c.req.method,
-        htu: `${baseUrl}/credentials`,
-        nonceRequired: true,
-      })
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Token is required'
-      return c.json({ error: 'invalid_token', error_description: message }, 401)
-    }
-
-    const requestBody = await c.req.json().catch(() => null)
-    if (!requestBody) {
-      return c.json({ error: 'invalid_request', error_description: 'Request body must be valid JSON' }, 400)
-    }
-    const parseResult = CredentialRequest.schema.safeParse(requestBody)
-    if (!parseResult.success) {
-      return c.json({ error: 'invalid_request', error_description: 'Invalid CredentialRequest' }, 400)
-    }
-
-    const claims = {
-      username: globalState.currentUsername,
-      issued_at: new Date().toISOString(),
-      medal_type: 'VCKnots User Medal',
-      user_level: 'Beginner',
-    }
-
-    console.log(`[hello-vcknots] Issuing VCKnotsUserMedal to user: "${claims.username}"`)
-
-    try {
-      const credential = await issuerFlow.issueCredential(issuer, parseResult.data, {
-        authorizationContext,
-        alg: 'ES256',
-        cnonce: {
-          c_nonce_expires_in: 300000,
-        },
-        claims,
-        proofJwt: { usePreAuth: true },
-      })
-      return c.json(credential)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[hello-vcknots] Credential issue error:', err)
-      return c.json({ error: 'invalid_request', error_description: message }, 400)
-    }
-  })
-
-  // 5. /callback (Verifier) エンドポイントのオーバーライド
   router.post('/callback', async (c) => {
     try {
       const formData = await c.req.formData()
@@ -234,7 +234,6 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
 
       console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload))
 
-      // 検証に成功したVCから username を抽出する
       let verifiedUsername = 'VCKnots Explorer'
       try {
         const allVps = Object.values(vpPayload).flat()
@@ -264,7 +263,7 @@ export const createCustomRouter = (context: VcknotsContext, baseUrl: string) => 
 
       console.log(`[hello-vcknots] Verifier successfully verified medal for: "${verifiedUsername}"`)
 
-      return c.json({ redirect_uri: `${baseUrl}/verified.html` }, 200)
+      return c.json({ redirect_uri: `${verifierBaseUrl}/verified.html` }, 200)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       console.error('[hello-vcknots] Verification callback error:', err)
