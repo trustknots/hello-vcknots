@@ -29,7 +29,21 @@ VCKnots の「Hello World」として、新しく VCKnots の世界に足を踏�
 
 本リポジトリのルートで以下のコマンドを実行するだけで、すべてのサーバーを一括で並行起動できます。
 
-### 1. 依存関係のインストールと準備
+### 1. 環境変数ファイルの準備
+
+Issuer/Verifier サーバーのポート設定に `.env` ファイルが必要です。`.env.example` をコピーして作成します。
+
+```bash
+# macOS / Linux
+cp server/issuer-verifier/.env.example server/issuer-verifier/.env
+
+# Windows
+copy server\issuer-verifier\.env.example server\issuer-verifier\.env
+```
+
+デフォルト設定（Issuer: 8080 / Verifier: 8081）のままで動作します。変更が必要な場合は `.env` を編集してください。
+
+### 2. 依存関係のインストールと準備
 
 リポジトリのルートディレクトリで以下を実行します（`server-core` ライブラリのトランスパイルも含まれます）。
 
@@ -38,7 +52,7 @@ pnpm install
 pnpm build
 ```
 
-### 2. アプリケーションの同時起動
+### 3. アプリケーションの同時起動
 
 以下のコマンドを実行すると、Issuer/Verifier サーバーと Go製 Wallet サーバーが同時に起動します。
 
@@ -73,29 +87,53 @@ Wallet Web UI: http://localhost:8082
 
 1. **Issuer 画面** (`http://localhost:8080/issuer.html`) を開きます。
 2. **「Your Username」** 欄にお好きなユーザー名（例: `Taro`）を入力し、**「🏅 メダルを発行する」** ボタンをクリックします。
+
+<img src="docs/screenshots/step1-issuer-01.png" alt="Issuer: ユーザー名入力" width="600">
+
 3. 画面に「VCKnots User Medal」のゴールドメダルイラスト 🏅、および **Credential Offer URL** とQRコードが表示されます。
-4. **「Copy Offer URL」** ボタンを押して、生成された URL をクリップボードにコピーします。
+4. **「コピー」** ボタンを押して、生成された URL をクリップボードにコピーします。
+
+<img src="docs/screenshots/step1-issuer-02.png" alt="Issuer: Credential Offer 発行完了・QRコード表示" width="600">
 
 ### ステップ 2: メダルの獲得と保管（Wallet）
 
 1. **Wallet 画面** (`http://localhost:8082`) を開きます。
-2. アクションエリアの **「メダルを追加 (Receive Medal)」** タブ（初期選択）にある入力欄に、コピーした **Offer URL** をペーストします。
-3. **「メダルを獲得する (Receive)」** ボタンをクリックします。
+2. アクションエリアの **「メダルを獲得する」** タブ（初期選択）にある入力欄に、コピーした **Offer URL** をペーストします。
+3. **「メダルを受け取る」** ボタンをクリックします。
+
+<img src="docs/screenshots/step2-wallet-01.png" alt="Wallet: Offer URL 入力" width="600">
+
 4. OID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VCKnots User Medal」** カードが追加されます！
 5. カード内の **「Username」** が Issuer で入力した名前になっていること、および発行日やステータスが正しく描画されていることを確認します。
+
+<img src="docs/screenshots/step2-wallet-02.png" alt="Wallet: メダル獲得後のコレクション表示" width="600">
 
 ### ステップ 3: メダルの提示と検証（OID4VP）
 
 1. **Verifier 画面** (`http://localhost:8081/verifier.html`) を開きます。
-2. 画面の **「検証を開始する」** ボタンをクリックします。
+2. 画面の **「検証要求を作成する」** ボタンをクリックします。
+
+<img src="docs/screenshots/step3-verifier-01.png" alt="Verifier: 検証要求作成ボタン" width="600">
+
 3. 画面上に OID4VP の **Presentation Request URL** とQRコードが表示され、自動的にステータス監視（ポーリング）が開始されます。
-4. **「Copy Request URL」** ボタンを押して、生成された URL をクリップボードにコピーします。
+4. **「コピー」** ボタンを押して、生成された URL をクリップボードにコピーします。
+
+<img src="docs/screenshots/step3-verifier-02.png" alt="Verifier: Presentation Request URL・QRコード表示" width="600">
+
 5. **Wallet 画面** (`http://localhost:8082`) に戻ります。
-6. アクションエリアの **「メダルを提示 (Present Medal)」** タブに切り替えます。
-7. 入力欄に、コピーした **Request URL** をペーストし、**「提示する (Present)」** ボタンをクリックします。
+6. アクションエリアの **「メダルを提示する」** タブに切り替えます。
+7. 入力欄に、コピーした **Request URL** をペーストし、**「メダルを提示（検証）する」** ボタンをクリックします。
+
+<img src="docs/screenshots/step3-wallet-03.png" alt="Wallet: メダル提示 Request URL 入力" width="600">
+
 8. 提示が成功すると、Wallet 側で「提示に成功しました！」と表示されます。
+
+<img src="docs/screenshots/step3-wallet-04.png" alt="Wallet: 提示成功" width="600">
+
 9. **Verifier 画面** に戻ると、ポーリングによって提示された VC をリアルタイムで検証・検知し、自動的に **歓迎画面（Welcome to VCKnots!）** に切り替わります！🎉
 10. 歓迎カードに、あなたがメダル獲得時に入力したユーザー名（例: `Welcome to VCKnots, Taro! 🏅`）が大きなフラットバナーで表示され、メダルの署名の真正性や検証時間が美しくフラットに表示されていることを確認してください。
+
+<img src="docs/screenshots/step3-verifier-05.png" alt="Verifier: Welcome to VCKnots! ウェルカム画面" width="600">
 
 ---
 
