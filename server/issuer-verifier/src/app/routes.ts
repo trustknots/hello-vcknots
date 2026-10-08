@@ -16,7 +16,7 @@ import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vckn
 import { VcknotsContext } from '@trustknots/vcknots'
 
 export const globalState = {
-  currentUsername: 'VCKnots Explorer',
+  currentUsername: 'VC Knots Explorer',
   lastVerifiedUsername: '',
   verificationStatus: 'idle', // 'idle' | 'verified'
 }
@@ -29,7 +29,7 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
   router.post('/api/setup', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}))
-      const username = ((body.username as string) || 'VCKnots Explorer').trim()
+      const username = ((body.username as string) || 'VC Knots Explorer').trim()
       globalState.currentUsername = username
       globalState.verificationStatus = 'idle'
       globalState.lastVerifiedUsername = ''
@@ -92,7 +92,7 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
     const claims = {
       username: globalState.currentUsername,
       issued_at: new Date().toISOString(),
-      medal_type: 'VCKnots User Medal',
+      medal_type: 'VC Knots User Medal',
       user_level: 'Beginner',
     }
 
@@ -234,7 +234,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
 
       console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload))
 
-      let verifiedUsername = 'VCKnots Explorer'
+      let verifiedUsername = 'VC Knots Explorer'
       try {
         const allVps = Object.values(vpPayload).flat()
         for (const vpEntry of allVps) {

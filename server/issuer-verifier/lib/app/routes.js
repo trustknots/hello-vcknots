@@ -4,7 +4,7 @@ import { initializeIssuerFlow, CredentialIssuer, CredentialConfigurationId, Cred
 import { initializeVerifierFlow, VerifierClientId, VerifierAuthorizationResponse, ClientIdentifier, } from '@trustknots/vcknots/verifier';
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz';
 export const globalState = {
-    currentUsername: 'VCKnots Explorer',
+    currentUsername: 'VC Knots Explorer',
     lastVerifiedUsername: '',
     verificationStatus: 'idle', // 'idle' | 'verified'
 };
@@ -15,7 +15,7 @@ export const createIssuerCustomRouter = (context, issuerBaseUrl) => {
     router.post('/api/setup', async (c) => {
         try {
             const body = await c.req.json().catch(() => ({}));
-            const username = (body.username || 'VCKnots Explorer').trim();
+            const username = (body.username || 'VC Knots Explorer').trim();
             globalState.currentUsername = username;
             globalState.verificationStatus = 'idle';
             globalState.lastVerifiedUsername = '';
@@ -181,7 +181,7 @@ export const createVerifierCustomRouter = (context, verifierBaseUrl) => {
             const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId);
             stateToTransactionId.delete(state);
             console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload));
-            let verifiedUsername = 'VCKnots Explorer';
+            let verifiedUsername = 'VC Knots Explorer';
             try {
                 const allVps = Object.values(vpPayload).flat();
                 for (const vpEntry of allVps) {

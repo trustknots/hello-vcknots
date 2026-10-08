@@ -4,7 +4,7 @@ import { initializeIssuerFlow, CredentialIssuer, CredentialConfigurationId, Cred
 import { initializeVerifierFlow, VerifierClientId, VerifierAuthorizationResponse, ClientIdentifier, } from '@trustknots/vcknots/verifier';
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz';
 export const globalState = {
-    currentUsername: 'VCKnots Explorer',
+    currentUsername: 'VC Knots Explorer',
     lastVerifiedUsername: '',
     verificationStatus: 'idle', // 'idle' | 'verified'
 };
@@ -19,7 +19,7 @@ export const createCustomRouter = (context, baseUrl) => {
     router.post('/api/setup', async (c) => {
         try {
             const body = await c.req.json().catch(() => ({}));
-            const username = (body.username || 'VCKnots Explorer').trim();
+            const username = (body.username || 'VC Knots Explorer').trim();
             globalState.currentUsername = username;
             globalState.verificationStatus = 'idle';
             globalState.lastVerifiedUsername = '';
@@ -131,10 +131,10 @@ export const createCustomRouter = (context, baseUrl) => {
         const claims = {
             username: globalState.currentUsername,
             issued_at: new Date().toISOString(),
-            medal_type: 'VCKnots User Medal',
+            medal_type: 'VC Knots User Medal',
             user_level: 'Beginner',
         };
-        console.log(`[hello-vcknots] Issuing VCKnotsUserMedal to user: "${claims.username}"`);
+        console.log(`[hello-vcknots] Issuing VC Knots User Medal to user: "${claims.username}"`);
         try {
             const credential = await issuerFlow.issueCredential(issuer, parseResult.data, {
                 authorizationContext,
@@ -181,7 +181,7 @@ export const createCustomRouter = (context, baseUrl) => {
             stateToTransactionId.delete(state);
             console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload));
             // 検証に成功したVCから username を抽出する
-            let verifiedUsername = 'VCKnots Explorer';
+            let verifiedUsername = 'VC Knots Explorer';
             try {
                 const allVps = Object.values(vpPayload).flat();
                 for (const vpEntry of allVps) {

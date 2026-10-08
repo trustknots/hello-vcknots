@@ -1,8 +1,8 @@
-# hello-vcknots: VCKnots E2E VC発行・検証サンプルアプリ 🏅
+# hello-vcknots: VC Knots E2E VC発行・検証サンプルアプリ 🏅
 
 `hello-vcknots` は、ローカル環境で **Issuer（発行者）**、**Wallet（保持者）**、**Verifier（検証者）** の3つの役割をすべて起動させ、E2EでVerifiable Credential (VC) の発行から検証までの流れを体験できるサンプルアプリケーションです。
 
-VCKnots の「Hello World」として、新しく VCKnots の世界に足を踏み入れた新規ユーザーの門出を祝う **「VCKnots User メダル」** という VC を配布し、それを検証してコミュニティへ歓迎する、というストーリーをベースにしています。
+VC Knots の「Hello World」として、新しく VC Knots の世界に足を踏み入れた新規ユーザーの門出を祝う **「VC Knots User メダル」** という VC を配布し、それを検証してコミュニティへ歓迎する、というストーリーをベースにしています。
 
 ライトテーマと親しみやすいすっきりとした境界線を用いた「フラットデザイン（Flat Design）」を採用しています。
 
@@ -12,11 +12,11 @@ VCKnots の「Hello World」として、新しく VCKnots の世界に足を踏�
 
 - **Issuer サーバー (TypeScript / Hono)**
   - ポート: `http://localhost:8080`
-  - 役割: ユーザー名から「VCKnots User メダル」を発行する（OID4VCI）。
+  - 役割: ユーザー名から「VC Knots User メダル」を発行する（OpenID4VCI）。
   - UI 画面: `http://localhost:8080/issuer.html`
 - **Verifier サーバー (TypeScript / Hono)**
   - ポート: `http://localhost:8081`
-  - 役割: 提示されたメダルを検証して歓迎メッセージを表示する（OID4VP & ポーリング）。
+  - 役割: 提示されたメダルを検証して歓迎メッセージを表示する（OpenID4VP & ポーリング）。
   - UI 画面: `http://localhost:8081/verifier.html`
 - **Wallet サーバー & Web UI (Go)**
   - ポート: `http://localhost:8082`
@@ -83,14 +83,14 @@ Wallet Web UI: http://localhost:8082
 2. **Verifier 画面**: `http://localhost:8081/verifier.html`
 3. **Wallet 画面**: `http://localhost:8082`
 
-### ステップ 1: メダル(VC)の発行（OID4VCI）
+### ステップ 1: メダル(VC)の発行（OpenID4VCI）
 
 1. **Issuer 画面** (`http://localhost:8080/issuer.html`) を開きます。
 2. **「Your Username」** 欄にお好きなユーザー名（例: `Taro`）を入力し、**「🏅 メダルを発行する」** ボタンをクリックします。
 
 <img src="docs/screenshots/step1-issuer-01.png" alt="Issuer: ユーザー名入力" width="600">
 
-3. 画面に「VCKnots User Medal」のゴールドメダルイラスト 🏅、および **Credential Offer URL** とQRコードが表示されます。
+3. 画面に「VC Knots User Medal」のゴールドメダルイラスト 🏅、および **Credential Offer URL** とQRコードが表示されます。
 4. **「コピー」** ボタンを押して、生成された URL をクリップボードにコピーします。
 
 <img src="docs/screenshots/step1-issuer-02.png" alt="Issuer: Credential Offer 発行完了・QRコード表示" width="600">
@@ -103,19 +103,19 @@ Wallet Web UI: http://localhost:8082
 
 <img src="docs/screenshots/step2-wallet-01.png" alt="Wallet: Offer URL 入力" width="600">
 
-4. OID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VCKnots User Medal」** カードが追加されます！
+4. OpenID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VC Knots User Medal」** カードが追加されます！
 5. カード内の **「Username」** が Issuer で入力した名前になっていること、および発行日やステータスが正しく描画されていることを確認します。
 
 <img src="docs/screenshots/step2-wallet-02.png" alt="Wallet: メダル獲得後のコレクション表示" width="600">
 
-### ステップ 3: メダルの提示と検証（OID4VP）
+### ステップ 3: メダルの提示と検証（OpenID4VP）
 
 1. **Verifier 画面** (`http://localhost:8081/verifier.html`) を開きます。
 2. 画面の **「検証要求を作成する」** ボタンをクリックします。
 
 <img src="docs/screenshots/step3-verifier-01.png" alt="Verifier: 検証要求作成ボタン" width="600">
 
-3. 画面上に OID4VP の **Presentation Request URL** とQRコードが表示され、自動的にステータス監視（ポーリング）が開始されます。
+3. 画面上に OpenID4VP の **Presentation Request URL** とQRコードが表示され、自動的にステータス監視（ポーリング）が開始されます。
 4. **「コピー」** ボタンを押して、生成された URL をクリップボードにコピーします。
 
 <img src="docs/screenshots/step3-verifier-02.png" alt="Verifier: Presentation Request URL・QRコード表示" width="600">
@@ -130,10 +130,10 @@ Wallet Web UI: http://localhost:8082
 
 <img src="docs/screenshots/step3-wallet-04.png" alt="Wallet: 提示成功" width="600">
 
-9. **Verifier 画面** に戻ると、ポーリングによって提示された VC をリアルタイムで検証・検知し、自動的に **歓迎画面（Welcome to VCKnots!）** に切り替わります！🎉
-10. 歓迎カードに、あなたがメダル獲得時に入力したユーザー名（例: `Welcome to VCKnots, Taro! 🏅`）が大きなフラットバナーで表示され、メダルの署名の真正性や検証時間が美しくフラットに表示されていることを確認してください。
+9. **Verifier 画面** に戻ると、ポーリングによって提示された VC をリアルタイムで検証・検知し、自動的に **歓迎画面（Welcome to VC Knots!）** に切り替わります！🎉
+10. 歓迎カードに、あなたがメダル獲得時に入力したユーザー名（例: `Welcome to VC Knots, Taro! 🏅`）が大きなフラットバナーで表示され、メダルの署名の真正性や検証時間が美しくフラットに表示されていることを確認してください。
 
-<img src="docs/screenshots/step3-verifier-05.png" alt="Verifier: Welcome to VCKnots! ウェルカム画面" width="600">
+<img src="docs/screenshots/step3-verifier-05.png" alt="Verifier: Welcome to VC Knots! ウェルカム画面" width="600">
 
 ---
 
