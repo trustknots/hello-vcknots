@@ -110,20 +110,6 @@ func newWallet(certPath string, credentialStorePath string) (*wallet.Wallet, err
 	})
 }
 
-func resolveCertificatePath() (string, error) {
-	candidates := []string{
-		"../../../server/samples/certificate-openid-test/certificate_openid.pem",
-		"../../vcknots/server/samples/certificate-openid-test/certificate_openid.pem",
-	}
-
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to find certificate; set VCKNOTS_CERT_PATH")
-}
 
 func main() {
 	// ローカル HTTP 通信を許可する
@@ -157,17 +143,7 @@ func main() {
 	// 証明書パスの設定
 	certPath := os.Getenv("VCKNOTS_CERT_PATH")
 	if certPath == "" {
-		// examples/hello-vcknots/wallet から見た相対パス
-		certPath = "../../../server/samples/certificate-openid-test/certificate_openid.pem"
-	}
-	if os.Getenv("VCKNOTS_CERT_PATH") == "" {
-		if _, err := os.Stat(certPath); err != nil {
-			resolvedCertPath, resolveErr := resolveCertificatePath()
-			if resolveErr != nil {
-				log.Fatal(resolveErr)
-			}
-			certPath = resolvedCertPath
-		}
+		certPath = "../server/issuer-verifier/config/keys/certificate_openid.pem"
 	}
 	absCertPath, err := filepath.Abs(certPath)
 	if err != nil {
