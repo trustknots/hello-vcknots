@@ -35,17 +35,17 @@ Issuer/Verifier サーバーのポート設定に `.env` ファイルが必要�
 
 ```bash
 # macOS / Linux
-cp server/issuer-verifier/.env.example server/issuer-verifier/.env
+cp issuer-verifier/.env.example issuer-verifier/.env
 
 # Windows
-copy server\issuer-verifier\.env.example server\issuer-verifier\.env
+copy issuer-verifier\.env.example issuer-verifier\.env
 ```
 
 デフォルト設定（Issuer: 8080 / Verifier: 8081）のままで動作します。変更が必要な場合は `.env` を編集してください。
 
 ### 2. 依存関係のインストールと準備
 
-リポジトリのルートディレクトリで以下を実行します（`server-core` ライブラリのトランスパイルも含まれます）。
+リポジトリのルートディレクトリで以下を実行します。
 
 ```bash
 pnpm install

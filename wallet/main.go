@@ -143,7 +143,7 @@ func main() {
 	// 証明書パスの設定
 	certPath := os.Getenv("VCKNOTS_CERT_PATH")
 	if certPath == "" {
-		certPath = "../server/issuer-verifier/config/keys/certificate_openid.pem"
+		certPath = "../issuer-verifier/config/keys/certificate_openid.pem"
 	}
 	absCertPath, err := filepath.Abs(certPath)
 	if err != nil {

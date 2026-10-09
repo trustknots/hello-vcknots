@@ -18,36 +18,14 @@ importers:
         specifier: ^8.2.2
         version: 8.2.2
 
-  server/issuer-verifier:
+  issuer-verifier:
     dependencies:
       '@hono/node-server':
         specifier: 2.0.12
         version: 2.0.12(hono@4.12.34)
-      '@trustknots/server-core':
-        specifier: workspace:*
-        version: link:../server-core
       dotenv:
         specifier: 17.4.1
         version: 17.4.1
-      hono:
-        specifier: 4.12.34
-        version: 4.12.34
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.5
-      tsx:
-        specifier: ^4.19.1
-        version: 4.23.13
-      typescript:
-        specifier: ^5.5.4
-        version: 5.9.3
-
-  server/server-core:
-    dependencies:
-      '@hono/node-server':
-        specifier: 2.0.12
-        version: 2.0.12(hono@4.12.34)
       hono:
         specifier: 4.12.34
         version: 4.12.34
@@ -58,6 +36,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.5
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.13
       typescript:
         specifier: ^5.5.4
         version: 5.9.3

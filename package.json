@@ -3,12 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "server/issuer-verifier",
-    "server/server-core"
+    "issuer-verifier"
   ],
   "scripts": {
-    "build": "pnpm build:server-core && pnpm build:issuer-verifier",
-    "build:server-core": "pnpm --filter @trustknots/server-core build",
+    "build": "pnpm build:issuer-verifier",
     "build:issuer-verifier": "pnpm --filter hello-vcknots-issuer-verifier build",
     "dev:server": "pnpm --filter hello-vcknots-issuer-verifier dev",
     "dev:wallet": "cd wallet && go run main.go",

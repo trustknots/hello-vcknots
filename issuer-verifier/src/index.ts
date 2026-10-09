@@ -18,9 +18,9 @@ import {
 } from '@trustknots/vcknots/issuer'
 import { initializeVerifierFlow, VerifierClientId, VerifierMetadata } from '@trustknots/vcknots/verifier'
 
-import { createAuthzRouter } from '@trustknots/server-core/routes/authz'
-import { createIssueRouter } from '@trustknots/server-core/routes/issue'
-import { createVerifierRouter } from '@trustknots/server-core/routes/verify'
+import { createAuthzRouter } from './routes/authz.js'
+import { createIssueRouter } from './routes/issue.js'
+import { createVerifierRouter } from './routes/verify.js'
 import { createIssuerCustomRouter, createVerifierCustomRouter } from './app/routes.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
