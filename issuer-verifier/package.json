@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "tsx config/keys/generate-keys.ts",
     "dev": "tsx src/index.ts",
     "build": "tsc"
   },
@@ -14,7 +15,9 @@
     "zod": "4.6.6"
   },
   "devDependencies": {
+    "@peculiar/x509": "^2.1.0",
     "@types/node": "^24.0.0",
+    "reflect-metadata": "^0.2.2",
     "tsx": "^4.23.15",
     "typescript": "^5.5.4"
   }

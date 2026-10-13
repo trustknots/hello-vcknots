@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
@@ -73,9 +73,14 @@ async function run() {
     const existingVerifier = await verifierFlow.findVerifierMetadata(clientId)
     if (!existingVerifier) {
       const privateKeyPath =
-        process.env.VERIFIER_PRIVATE_KEY_PATH ?? join(keyDir, 'private_key_openid.pem')
+        process.env.VERIFIER_PRIVATE_KEY_PATH ?? join(keyDir, 'private_key_sample.pem')
       const certificatePath =
-        process.env.VERIFIER_CERTIFICATE_PATH ?? join(keyDir, 'certificate_openid.pem')
+        process.env.VERIFIER_CERTIFICATE_PATH ?? join(keyDir, 'certificate_sample.pem')
+      if (!existsSync(privateKeyPath) || !existsSync(certificatePath)) {
+        throw new Error(
+          `Key files not found. Run \`pnpm setup\` first.\n  Expected: ${privateKeyPath}\n  Expected: ${certificatePath}`
+        )
+      }
       const privateKey = readFileSync(privateKeyPath, 'utf-8')
       const certificate = readFileSync(certificatePath, 'utf-8')
 
@@ -109,8 +114,9 @@ async function run() {
     }
   }
 
-  await initMetadata().catch((err) => {
-    console.error('Metadata initialization warning:', err)
+  await initMetadata().catch((err: unknown) => {
+    console.error('[hello-vcknots] Failed to initialize metadata:', err instanceof Error ? err.message : err)
+    process.exit(1)
   })
 
   const publicDir = resolve(projectDir, 'public')

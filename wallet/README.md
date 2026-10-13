@@ -17,11 +17,11 @@ pnpm dev:wallet
 
 | 変数名 | デフォルト | 説明 |
 | --- | --- | --- |
-| `VCKNOTS_CERT_PATH` | `../issuer-verifier/config/keys/certificate_openid.pem` | Verifier の証明書パス |
+| `VCKNOTS_CERT_PATH` | `../issuer-verifier/config/keys/certificate_sample.pem` | Verifier の証明書パス |
 
 ### 証明書パスを変更する場合
 
-デフォルトでは `issuer-verifier/config/keys/certificate_openid.pem` を参照します。
+デフォルトでは `issuer-verifier/config/keys/certificate_sample.pem` を参照します。
 別の証明書を使いたい場合は、起動時に `VCKNOTS_CERT_PATH` を指定します。
 
 ```bash

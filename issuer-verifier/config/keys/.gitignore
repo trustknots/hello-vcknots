@@ -1,5 +1,5 @@
 *
 !.gitignore
 !README.md
-!private_key_openid.pem
-!certificate_openid.pem
+!generate-keys.ts
+!tsconfig.json
