@@ -128,15 +128,12 @@ func main() {
 	}
 
 	// E2E テストで古いデータの干渉を防ぐため、起動時にローカルDBをクリーンアップする
-	if appDir, err := os.UserConfigDir(); err == nil {
-		dbPath := filepath.Join(appDir, "vcknots", "wallet", ".local_credstore.db")
-		if _, err := os.Stat(dbPath); err == nil {
-			log.Printf("[wallet] Cleaning up old local database at %s...", dbPath)
-			if err := os.Remove(dbPath); err != nil {
-				log.Printf("[wallet] Warning: failed to delete old local database: %v", err)
-			} else {
-				log.Printf("[wallet] Successfully cleaned up old database.")
-			}
+	if _, err := os.Stat(credentialStorePath); err == nil {
+		log.Printf("[wallet] Cleaning up old local database at %s...", credentialStorePath)
+		if err := os.Remove(credentialStorePath); err != nil {
+			log.Printf("[wallet] Warning: failed to delete old local database: %v", err)
+		} else {
+			log.Printf("[wallet] Successfully cleaned up old database.")
 		}
 	}
 

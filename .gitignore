@@ -1,6 +1,7 @@
 # compiled output
 /dist
 lib/
+*.exe
 
 node_modules/
 .pnpm-store/
