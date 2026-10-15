@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "tsx config/keys/generate-keys.ts",
+    "gen-keys": "tsx config/keys/generate-keys.ts",
     "dev": "tsx src/index.ts",
     "build": "tsc"
   },

@@ -6,7 +6,7 @@
     "issuer-verifier"
   ],
   "scripts": {
-    "setup": "pnpm --filter hello-vcknots-issuer-verifier run setup",
+    "gen-keys": "pnpm --filter hello-vcknots-issuer-verifier run gen-keys",
     "build": "pnpm build:issuer-verifier",
     "build:issuer-verifier": "pnpm --filter hello-vcknots-issuer-verifier build",
     "dev:server": "pnpm --filter hello-vcknots-issuer-verifier dev",

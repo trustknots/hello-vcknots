@@ -67,13 +67,13 @@ pnpm build
 Verifier の署名鍵と証明書を生成します。鍵ファイルは git 管理対象外のため、初回のみ実行が必要です。
 
 ```bash
-pnpm setup
+pnpm gen-keys
 ```
 
 `issuer-verifier/config/keys/` に `private_key_sample.pem` と `certificate_sample.pem` が生成されます。2回目以降は既存ファイルが検出されスキップされます。
 
 > **SAN（Subject Alternative Name）のカスタマイズ**
-> デフォルトは `localhost,127.0.0.1` です。異なるホスト名や IP で動作させる場合は、`.env` に `VCKNOTS_SAN=your.host,192.168.1.1` を追加してから `pnpm setup` を実行してください。
+> デフォルトは `localhost,127.0.0.1` です。異なるホスト名や IP で動作させる場合は、`.env` に `VCKNOTS_SAN=your.host,192.168.1.1` を追加してから `pnpm gen-keys` を実行してください。
 
 ### 4. アプリケーションの同時起動
 

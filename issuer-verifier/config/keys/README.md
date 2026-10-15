@@ -3,7 +3,7 @@
 鍵ファイルは **git 管理対象外** です。サーバー起動前にローカルで生成してください。
 
 ```sh
-pnpm setup
+pnpm gen-keys
 ```
 
 `private_key_sample.pem` と `certificate_sample.pem`（ES256、自己署名、有効期限10年）が生成されます。
