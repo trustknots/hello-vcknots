@@ -78,7 +78,7 @@ async function run() {
         process.env.VERIFIER_CERTIFICATE_PATH ?? join(keyDir, 'certificate_sample.pem')
       if (!existsSync(privateKeyPath) || !existsSync(certificatePath)) {
         throw new Error(
-          `Key files not found. Run \`pnpm setup\` first.\n  Expected: ${privateKeyPath}\n  Expected: ${certificatePath}`
+          `Key files not found. Run \`pnpm gen-keys\` first.\n  Expected: ${privateKeyPath}\n  Expected: ${certificatePath}`
         )
       }
       const privateKey = readFileSync(privateKeyPath, 'utf-8')

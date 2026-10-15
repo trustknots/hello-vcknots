@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import 'reflect-metadata'
 import * as x509 from '@peculiar/x509'
 import { existsSync, writeFileSync } from 'node:fs'
