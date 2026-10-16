@@ -3,6 +3,8 @@
 Go で実装した VC Knots デモ用ウォレットです。
 Issuer からの VC 受け取りと Verifier への VP 提示を行います。
 
+[`github.com/trustknots/vcknots/wallet`](https://pkg.go.dev/github.com/trustknots/vcknots/wallet) を使った利用サンプルです。
+
 ## 起動方法
 
 リポジトリルートから実行します。

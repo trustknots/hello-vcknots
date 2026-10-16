@@ -1,6 +1,6 @@
 # hello-vcknots: VC Knots E2E VC発行・検証サンプルアプリ 🏅
 
-`hello-vcknots` は、ローカル環境で **Issuer（発行者）**、**Wallet（保持者）**、**Verifier（検証者）** の3つの役割をすべて起動させ、E2EでVerifiable Credential (VC) の発行から検証までの流れを体験できるサンプルアプリケーションです。
+`hello-vcknots` は、[`@trustknots/vcknots`](https://www.npmjs.com/package/@trustknots/vcknots)（npm）および [`github.com/trustknots/vcknots/wallet`](https://pkg.go.dev/github.com/trustknots/vcknots/wallet)（Go モジュール）を使った公式サンプルアプリケーションです。ローカル環境で **Issuer（発行者）**、**Wallet（保持者）**、**Verifier（検証者）** の3つの役割をすべて起動させ、E2EでVerifiable Credential (VC) の発行から検証までの流れを体験できます。
 
 VC Knots の「Hello World」として、新しく VC Knots の世界に足を踏み入れた新規ユーザーの門出を祝う **「VC Knots User メダル」** という VC を配布し、それを検証してコミュニティへ歓迎する、というストーリーをベースにしています。
 

@@ -3,6 +3,8 @@
 TypeScript (Hono) で実装した Issuer・Verifier の Web アプリです。
 VC の発行フロー (Issuance) と検証フロー (Verification) のエンドポイントを提供します。
 
+[`@trustknots/vcknots`](https://www.npmjs.com/package/@trustknots/vcknots) を使った利用サンプルです。
+
 ## 構成
 
 ```text
