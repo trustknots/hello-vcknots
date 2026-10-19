@@ -10,7 +10,7 @@
     "build": "pnpm build:issuer-verifier",
     "build:issuer-verifier": "pnpm --filter hello-vcknots-issuer-verifier build",
     "dev:server": "pnpm --filter hello-vcknots-issuer-verifier dev",
-    "dev:wallet": "cd wallet && go run main.go",
+    "dev:wallet": "cd wallet && go run .",
     "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:wallet\""
   },
   "devDependencies": {

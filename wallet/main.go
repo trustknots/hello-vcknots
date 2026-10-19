@@ -17,7 +17,6 @@ import (
 	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/credstore/plugins/local"
 	"github.com/trustknots/vcknots/wallet/env"
-	"github.com/trustknots/vcknots/wallet/examples/common"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
@@ -29,7 +28,7 @@ import (
 
 var (
 	appWallet *wallet.Wallet
-	mockKey   *common.MockKeyEntry
+	demoKey   *demoKeyEntry
 )
 
 type ReceiveRequest struct {
@@ -152,7 +151,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize wallet: %v", err)
 	}
-	mockKey = common.NewMockKeyEntry()
+	demoKey = newDemoKeyEntry()
 
 	// --- 静的ファイルの配信 ---
 	fs := http.FileServer(http.Dir("./public"))
@@ -288,7 +287,7 @@ func handleReceiveCredential(w http.ResponseWriter, r *http.Request) {
 	receiveReq := wallet.ReceiveCredentialRequest{
 		CredentialOffer: credentialOffer,
 		Type:            receiverTypes.Oid4vci,
-		Key:             mockKey,
+		Key:             demoKey,
 	}
 
 	savedCredential, err := appWallet.ReceiveCredential(receiveReq)
@@ -331,7 +330,7 @@ func handlePresentCredential(w http.ResponseWriter, r *http.Request) {
 	requestURL := req.RequestURL
 	log.Printf("[wallet] Presenting credential for request URL: %s", requestURL)
 
-	_, err = appWallet.PresentCredential(requestURL, mockKey, nil)
+	_, err = appWallet.PresentCredential(requestURL, demoKey, nil)
 	if err != nil {
 		log.Printf("[wallet] PresentCredential failed: %v", err)
 		writeJSONError(w, "Failed to present credential: "+err.Error(), http.StatusInternalServerError)
