@@ -14,9 +14,6 @@
     "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:wallet\""
   },
   "devDependencies": {
-    "@trustknots/vcknots": "0.8.0",
-    "@types/node": "^24.0.0",
-    "concurrently": "^8.2.2",
-    "tsx": "^4.23.15"
+    "concurrently": "^8.2.2"
   }
 }

@@ -8,24 +8,18 @@ importers:
 
   .:
     devDependencies:
-      '@trustknots/vcknots':
-        specifier: 0.8.0
-        version: 0.8.0(typescript@5.9.3)
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.5
       concurrently:
         specifier: ^8.2.2
         version: 8.2.2
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
 
   issuer-verifier:
     dependencies:
       '@hono/node-server':
         specifier: 2.1.4
         version: 2.1.4(hono@4.13.13)
+      '@trustknots/vcknots':
+        specifier: 0.8.0
+        version: 0.8.0(typescript@5.9.3)
       dotenv:
         specifier: 17.4.1
         version: 17.4.1
