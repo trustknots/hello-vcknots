@@ -35,3 +35,7 @@ $env:VCKNOTS_CERT_PATH = "C:\path\to\certificate.pem"; pnpm dev:wallet
 ```
 
 この変数は起動時にのみ読み込まれます。変更する場合は wallet の再起動が必要です。
+
+### 署名鍵
+
+このデモウォレットはハードコードされた固定 P-256 鍵（`demo_key.go`）を使用します。再現性を優先したデモ用の設定であり、本番環境では使用しないでください。
