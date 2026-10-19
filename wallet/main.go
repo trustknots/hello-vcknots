@@ -122,9 +122,6 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(credentialStorePath), 0700); err != nil {
 		log.Fatalf("Failed to create wallet data directory: %v", err)
 	}
-	if err := os.Setenv("APPDATA", dataRoot); err != nil {
-		log.Fatalf("Failed to set wallet data directory: %v", err)
-	}
 
 	// E2E テストで古いデータの干渉を防ぐため、起動時にローカルDBをクリーンアップする
 	if _, err := os.Stat(credentialStorePath); err == nil {
