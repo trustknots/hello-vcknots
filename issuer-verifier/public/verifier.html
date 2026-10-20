@@ -13,6 +13,93 @@
     #verifyArea, #successArea {
       display: none;
     }
+    #vcDetails {
+      border: 2px solid var(--color-verifier);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 3px 3px 0px 0px var(--border-color);
+    }
+    #vcToggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--color-verifier-light);
+      border: none;
+      padding: 0.75rem 1rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--color-verifier);
+      cursor: pointer;
+      transition: filter 0.1s ease;
+    }
+    #vcToggle:hover { filter: brightness(0.96); }
+    #vcToggle.open { border-bottom: 2px solid var(--color-verifier); }
+    /* VC 詳細パネル — ネストボックスで階層表示 */
+    #vcBody {
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      background: #f9fafb;
+    }
+    .vc-block {
+      border: 1.5px solid #d1d5db;
+      border-radius: 5px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .vc-block-title {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #374151;
+      padding: 0.28rem 0.65rem;
+      background: #f3f4f6;
+      border-bottom: 1px solid #d1d5db;
+    }
+    .vc-block-inner {
+      padding: 0.15rem 0;
+    }
+    .vc-block-inner > .vc-block {
+      margin: 0.3rem 0.65rem 0.4rem;
+    }
+    .vc-row {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.38rem 0.65rem;
+      border-bottom: 1px solid #f3f4f6;
+      align-items: baseline;
+    }
+    #vcBody > .vc-row { border-bottom: none; }
+    .vc-row:last-child { border-bottom: none; }
+    .vc-row-key {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: #9ca3af;
+      flex: 0 0 6.5rem;
+    }
+    .vc-row-value {
+      font-size: 0.85rem;
+      color: #1f2937;
+      word-break: break-all;
+      flex: 1;
+    }
+    .vc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+    .vc-chip {
+      font-size: 0.72rem;
+      font-family: 'Courier New', monospace;
+      padding: 0.1rem 0.4rem;
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 3px;
+      color: #374151;
+    }
     .verified-box {
       border: 3px solid var(--color-success);
       background-color: var(--color-success-light);
@@ -96,6 +183,17 @@
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
           これであなたも正式な VC Knots ユーザーコミュニティのメンバーです！
         </p>
+      </div>
+
+      <!-- VC詳細パネル（アコーディオン） -->
+      <div id="vcDetails" style="margin-top: 1.5rem; display: none;">
+        <button id="vcToggle">
+          <span>🔍 VC 詳細情報</span>
+          <span id="vcToggleIcon" style="font-size: 0.75rem; transition: transform 0.25s ease;">▼</span>
+        </button>
+        <div id="vcDetailsBody" style="overflow: hidden; max-height: 0; transition: max-height 0.35s ease, opacity 0.25s ease; opacity: 0;">
+          <div id="vcBody"></div>
+        </div>
       </div>
 
       <button class="btn" id="btnRestart" style="--btn-color: var(--text-secondary); margin-top: 1.5rem; background-color: #f3f4f6; color: var(--text-primary);">
@@ -186,6 +284,96 @@
       }
     });
 
+    // 行要素を生成
+    function makeRow(key, value) {
+      const row = document.createElement('div');
+      row.className = 'vc-row';
+      const keyEl = document.createElement('span');
+      keyEl.className = 'vc-row-key';
+      keyEl.textContent = key;
+      row.appendChild(keyEl);
+      const valEl = document.createElement('span');
+      valEl.className = 'vc-row-value';
+      if (Array.isArray(value)) {
+        const chips = document.createElement('span');
+        chips.className = 'vc-chips';
+        value.forEach(item => {
+          const chip = document.createElement('span');
+          chip.className = 'vc-chip';
+          chip.textContent = String(item);
+          chips.appendChild(chip);
+        });
+        valEl.appendChild(chips);
+      } else {
+        valEl.textContent = String(value ?? '');
+      }
+      row.appendChild(valEl);
+      return row;
+    }
+
+    // ボックス要素を生成（title + 中身を buildFn で構築）
+    function makeBlock(title, buildFn) {
+      const block = document.createElement('div');
+      block.className = 'vc-block';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'vc-block-title';
+      titleEl.textContent = title;
+      block.appendChild(titleEl);
+      const inner = document.createElement('div');
+      inner.className = 'vc-block-inner';
+      buildFn(inner);
+      block.appendChild(inner);
+      return block;
+    }
+
+    // アコーディオン開閉
+    let vcDetailsOpen = false;
+    document.getElementById('vcToggle').addEventListener('click', () => {
+      const body = document.getElementById('vcDetailsBody');
+      const icon = document.getElementById('vcToggleIcon');
+      const toggle = document.getElementById('vcToggle');
+      vcDetailsOpen = !vcDetailsOpen;
+      if (vcDetailsOpen) {
+        body.style.maxHeight = body.scrollHeight + 'px';
+        body.style.opacity = '1';
+        icon.style.transform = 'rotate(180deg)';
+        toggle.classList.add('open');
+      } else {
+        body.style.maxHeight = '0';
+        body.style.opacity = '0';
+        icon.style.transform = 'rotate(0deg)';
+        toggle.classList.remove('open');
+      }
+    });
+
+    // VC 詳細パネルを描画（全クレーム・キー名そのまま）
+    function renderVcDetails(vc) {
+      if (!vc) return;
+      const vcMeta = vc.vc || {};
+      const body = document.getElementById('vcBody');
+      body.innerHTML = '';
+
+      // vc ブロック
+      body.appendChild(makeBlock('vc', inner => {
+        ['@context', 'id', 'type', 'issuer', 'issuanceDate'].forEach(key => {
+          if (vcMeta[key] !== undefined) inner.appendChild(makeRow(key, vcMeta[key]));
+        });
+        const credSubject = vcMeta.credentialSubject;
+        if (credSubject && typeof credSubject === 'object') {
+          inner.appendChild(makeBlock('credentialSubject', sub => {
+            Object.entries(credSubject).forEach(([k, v]) => sub.appendChild(makeRow(k, v)));
+          }));
+        }
+      }));
+
+      // vc 以外のトップレベルキー（iss, sub など）をフラットに並べる
+      Object.entries(vc)
+        .filter(([k]) => k !== 'vc')
+        .forEach(([k, v]) => body.appendChild(makeRow(k, v)));
+
+      document.getElementById('vcDetails').style.display = 'block';
+    }
+
     // ポーリング処理
     function startPolling() {
       if (pollingInterval) clearInterval(pollingInterval);
@@ -203,6 +391,7 @@
             verifiedUserSpan.innerText = data.username || 'VC Knots Explorer';
             verifyArea.style.display = 'none';
             successArea.style.display = 'block';
+            renderVcDetails(data.vc);
           }
         } catch (ex) {
           console.error('[verifier] Polling error:', ex);
@@ -214,7 +403,7 @@
     btnCopy.addEventListener('click', () => {
       requestUrlInput.select();
       document.execCommand('copy');
-      
+
       copyStatus.style.display = 'block';
       setTimeout(() => {
         copyStatus.style.display = 'none';
@@ -227,6 +416,16 @@
         clearInterval(pollingInterval);
         pollingInterval = null;
       }
+      const vcDetails = document.getElementById('vcDetails');
+      const vcDetailsBody = document.getElementById('vcDetailsBody');
+      const vcToggle = document.getElementById('vcToggle');
+      const vcToggleIcon = document.getElementById('vcToggleIcon');
+      vcDetails.style.display = 'none';
+      vcDetailsBody.style.maxHeight = '0';
+      vcDetailsBody.style.opacity = '0';
+      vcToggle.classList.remove('open');
+      vcToggleIcon.style.transform = 'rotate(0deg)';
+      vcDetailsOpen = false;
       startCard.style.display = 'block';
       successArea.style.display = 'none';
       btnStart.disabled = false;

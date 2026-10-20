@@ -18,7 +18,8 @@ import { VcknotsContext } from '@trustknots/vcknots'
 export const globalState = {
   currentUsername: 'VC Knots Explorer',
   lastVerifiedUsername: '',
-  verificationStatus: 'idle', // 'idle' | 'verified'
+  verificationStatus: 'idle' as 'idle' | 'verified',
+  lastVerifiedVc: null as Record<string, unknown> | null,
 }
 
 export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl: string) => {
@@ -33,6 +34,7 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
       globalState.currentUsername = username
       globalState.verificationStatus = 'idle'
       globalState.lastVerifiedUsername = ''
+      globalState.lastVerifiedVc = null
       console.log(`[hello-vcknots] Setup demo user: ${username}`)
       return c.json({ ok: true, username })
     } catch (e: unknown) {
@@ -130,6 +132,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
     return c.json({
       status: globalState.verificationStatus,
       username: globalState.lastVerifiedUsername,
+      vc: globalState.lastVerifiedVc,
     })
   })
 
@@ -235,22 +238,24 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
       console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload))
 
       let verifiedUsername = 'VC Knots Explorer'
+      let verifiedVc: Record<string, unknown> | null = null
       try {
         const allVps = Object.values(vpPayload).flat()
         for (const vpEntry of allVps) {
           const vpRecord = vpEntry as Record<string, unknown>
-          const vcArr = (vpRecord?.vc as Record<string, unknown> | undefined)?.verifiableCredential
+          const vcArr = (vpRecord?.vp as Record<string, unknown> | undefined)?.verifiableCredential
           const vcJwt = Array.isArray(vcArr) ? (vcArr[0] as string | undefined) : undefined
           if (typeof vcJwt === 'string') {
             const parts = vcJwt.split('.')
             if (parts.length === 3 && parts[1]) {
               const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>
-              const credSubject =
-                (decoded?.vc as Record<string, unknown> | undefined)?.credentialSubject as Record<string, unknown> | undefined
+              const vc = decoded?.vc as Record<string, unknown> | undefined
+              const credSubject = vc?.credentialSubject as Record<string, unknown> | undefined
               if (typeof credSubject?.username === 'string') {
                 verifiedUsername = credSubject.username
-                break
               }
+              verifiedVc = decoded
+              break
             }
           }
         }
@@ -259,6 +264,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
       }
 
       globalState.lastVerifiedUsername = verifiedUsername
+      globalState.lastVerifiedVc = verifiedVc
       globalState.verificationStatus = 'verified'
 
       console.log(`[hello-vcknots] Verifier successfully verified medal for: "${verifiedUsername}"`)

@@ -6,6 +6,29 @@
   <title>VC Knots メダル・ウォレット (Wallet)</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <style>
+    /* VC 選択ステップ */
+    #vcSelectStep { display: none; }
+    .vc-select-card {
+      border: 2px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .vc-select-card:hover { border-color: var(--color-wallet); background: #f0f7ff; }
+    .vc-select-card.selected { border-color: var(--color-wallet); background: #e0f0ff; }
+    .vc-select-card input[type="radio"] { accent-color: var(--color-wallet); width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+    .vc-select-card-body { flex: 1; }
+    .vc-select-card-title { font-weight: 700; font-size: 0.9rem; }
+    .vc-select-card-sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.1rem; }
+    .step-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .step-actions .btn { flex: 1; }
+  </style>
 </head>
 <body>
 
@@ -36,13 +59,34 @@
 
       <!-- メダルを提示するコンテンツ -->
       <div class="tab-content" id="tabPresentContent">
-        <div class="form-group" style="margin-top: 1rem;">
-          <label for="requestUrl">Presentation Request URL (要求URL) を貼り付け</label>
-          <input type="text" id="requestUrl" placeholder="openid4vp://authorize?client_id=...">
+
+        <!-- ステップ1: Request URL 入力 -->
+        <div id="urlInputStep">
+          <div class="form-group" style="margin-top: 1rem;">
+            <label for="requestUrl">Presentation Request URL (要求URL) を貼り付け</label>
+            <input type="text" id="requestUrl" placeholder="openid4vp://authorize?client_id=...">
+          </div>
+          <button class="btn" id="btnSelectVc" style="--btn-color: var(--color-wallet);">
+            <span>📤 メダルを提示（検証）する</span>
+          </button>
         </div>
-        <button class="btn" id="btnPresent" style="--btn-color: var(--color-wallet);">
-          <span>📤 メダルを提示（検証）する</span>
-        </button>
+
+        <!-- ステップ2: VC 選択 -->
+        <div id="vcSelectStep">
+          <p style="margin: 1rem 0 0.5rem; font-weight: 600; color: var(--text-primary);">
+            提示するメダル（VC）を選んでください
+          </p>
+          <div id="vcSelectList"></div>
+          <div class="step-actions">
+            <button class="btn" id="btnConfirmPresent" style="--btn-color: var(--color-wallet);" disabled>
+              <span>✓ この VC で提示する</span>
+            </button>
+            <button class="btn" id="btnCancelSelect" style="--btn-color: var(--text-secondary); background: #f3f4f6; color: var(--text-primary);">
+              <span>← 戻る</span>
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -69,21 +113,26 @@
   </div>
 
   <script>
-    // 要素の取得
     const tabReceiveBtn = document.getElementById('tabReceiveBtn');
     const tabPresentBtn = document.getElementById('tabPresentBtn');
     const tabReceiveContent = document.getElementById('tabReceiveContent');
     const tabPresentContent = document.getElementById('tabPresentContent');
 
     const btnReceive = document.getElementById('btnReceive');
-    const btnPresent = document.getElementById('btnPresent');
     const offerUrlInput = document.getElementById('offerUrl');
     const requestUrlInput = document.getElementById('requestUrl');
 
     const noMedals = document.getElementById('noMedals');
     const medalsGrid = document.getElementById('medalsGrid');
 
-    // タブ切り替え処理
+    const urlInputStep = document.getElementById('urlInputStep');
+    const vcSelectStep = document.getElementById('vcSelectStep');
+    const vcSelectList = document.getElementById('vcSelectList');
+    const btnSelectVc = document.getElementById('btnSelectVc');
+    const btnConfirmPresent = document.getElementById('btnConfirmPresent');
+    const btnCancelSelect = document.getElementById('btnCancelSelect');
+
+    // タブ切り替え
     tabReceiveBtn.addEventListener('click', () => {
       tabReceiveBtn.classList.add('active');
       tabPresentBtn.classList.remove('active');
@@ -96,6 +145,132 @@
       tabReceiveBtn.classList.remove('active');
       tabPresentContent.classList.add('active');
       tabReceiveContent.classList.remove('active');
+    });
+
+    // VC 選択ステップへ切り替え
+    btnSelectVc.addEventListener('click', async () => {
+      const requestUrl = requestUrlInput.value.trim();
+      if (!requestUrl) {
+        alert('要求URLを貼り付けてください！');
+        return;
+      }
+
+      btnSelectVc.disabled = true;
+      btnSelectVc.innerHTML = '<span class="spinner"></span> <span>メダルを読み込み中...</span>';
+
+      try {
+        const response = await fetch('/api/credentials');
+        const credentials = await response.json();
+        if (!credentials || credentials.length === 0) {
+          alert('提示できるメダルがありません。先にメダルを獲得してください。');
+          return;
+        }
+
+        renderVcSelectList(credentials);
+        urlInputStep.style.display = 'none';
+        vcSelectStep.style.display = 'block';
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+      } finally {
+        btnSelectVc.disabled = false;
+        btnSelectVc.innerHTML = '<span>📤 メダルを提示（検証）する</span>';
+      }
+    });
+
+    // VC 選択リストを描画
+    function renderVcSelectList(credentials) {
+      vcSelectList.innerHTML = '';
+      btnConfirmPresent.disabled = true;
+
+      credentials.forEach((cred) => {
+        const claims = cred.claims || {};
+        const username = claims.username || 'Explorer';
+        const level = claims.user_level;
+        const issuedAt = claims.issued_at ? new Date(claims.issued_at).toLocaleString() : '不明';
+
+        const card = document.createElement('label');
+        card.className = 'vc-select-card';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'vcChoice';
+        radio.value = cred.id;
+
+        const body = document.createElement('div');
+        body.className = 'vc-select-card-body';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'vc-select-card-title';
+        titleEl.textContent = `🏅 VC Knots User Medal — ${username}`;
+
+        const subEl = document.createElement('div');
+        subEl.className = 'vc-select-card-sub';
+        subEl.textContent = (level ? `Level: ${level} | ` : '') + `獲得日: ${issuedAt}`;
+
+        body.appendChild(titleEl);
+        body.appendChild(subEl);
+        card.appendChild(radio);
+        card.appendChild(body);
+
+        radio.addEventListener('change', () => {
+          document.querySelectorAll('.vc-select-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          btnConfirmPresent.disabled = false;
+        });
+
+        vcSelectList.appendChild(card);
+
+        // VCが1件だけなら自動選択
+        if (credentials.length === 1) {
+          radio.checked = true;
+          card.classList.add('selected');
+          btnConfirmPresent.disabled = false;
+        }
+      });
+    }
+
+    // 戻るボタン
+    btnCancelSelect.addEventListener('click', () => {
+      vcSelectStep.style.display = 'none';
+      urlInputStep.style.display = 'block';
+    });
+
+    // 提示実行
+    btnConfirmPresent.addEventListener('click', async () => {
+      const selected = document.querySelector('input[name="vcChoice"]:checked');
+      if (!selected) return;
+
+      const credentialId = selected.value;
+      const requestUrl = requestUrlInput.value.trim();
+
+      btnConfirmPresent.disabled = true;
+      btnConfirmPresent.innerHTML = '<span class="spinner"></span> <span>提示中...</span>';
+
+      try {
+        const response = await fetch('/api/present', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_url: requestUrl, credential_id: credentialId })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to present medal');
+        }
+
+        alert('✓ メダルを正常に提示しました！\nVerifier画面を確認してください。');
+        requestUrlInput.value = '';
+        vcSelectStep.style.display = 'none';
+        urlInputStep.style.display = 'block';
+
+      } catch (err) {
+        alert('エラーが発生しました: ' + err.message);
+        console.error(err);
+      } finally {
+        btnConfirmPresent.disabled = false;
+        btnConfirmPresent.innerHTML = '<span>✓ この VC で提示する</span>';
+      }
     });
 
     // 1. 保有クレデンシャル一覧のロード
@@ -118,22 +293,46 @@
           const claims = cred.claims || {};
           const username = claims.username || 'Explorer';
           const issuedAt = claims.issued_at ? new Date(claims.issued_at).toLocaleString() : '不明';
-          const level = claims.user_level || 'Beginner';
+          const level = claims.user_level;
 
           const card = document.createElement('div');
           card.className = 'medal-card';
-          card.innerHTML = `
-            <div class="medal-card-icon">🏅</div>
-            <div class="badge badge-success">VC / メダル</div>
-            <div class="medal-card-title">VC Knots User Medal</div>
-            <div class="medal-card-detail" style="margin-top: 0.5rem;">
-              <strong>Username:</strong> ${username}<br>
-              <strong>Level:</strong> ${level}<br>
-              <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.25rem;">
-                獲得日: ${issuedAt}
-              </span>
-            </div>
-          `;
+
+          const iconEl = document.createElement('div');
+          iconEl.className = 'medal-card-icon';
+          iconEl.textContent = '🏅';
+
+          const badgeEl = document.createElement('div');
+          badgeEl.className = 'badge badge-success';
+          badgeEl.textContent = 'VC / メダル';
+
+          const titleEl = document.createElement('div');
+          titleEl.className = 'medal-card-title';
+          titleEl.textContent = 'VC Knots User Medal';
+
+          const detailEl = document.createElement('div');
+          detailEl.className = 'medal-card-detail';
+          detailEl.style.marginTop = '0.5rem';
+
+          const addDetailRow = (label, value) => {
+            const strong = document.createElement('strong');
+            strong.textContent = label;
+            detailEl.appendChild(strong);
+            detailEl.appendChild(document.createTextNode(' ' + value));
+            detailEl.appendChild(document.createElement('br'));
+          };
+          addDetailRow('Username:', username);
+          if (level) addDetailRow('Level:', level);
+
+          const dateSpan = document.createElement('span');
+          dateSpan.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.25rem;';
+          dateSpan.textContent = `獲得日: ${issuedAt}`;
+          detailEl.appendChild(dateSpan);
+
+          card.appendChild(iconEl);
+          card.appendChild(badgeEl);
+          card.appendChild(titleEl);
+          card.appendChild(detailEl);
           medalsGrid.appendChild(card);
         });
 
@@ -167,8 +366,6 @@
 
         alert('🎉 メダルを正常に獲得しました！');
         offerUrlInput.value = '';
-        
-        // メダル一覧を更新
         await loadCredentials();
 
       } catch (err) {
@@ -180,42 +377,6 @@
       }
     });
 
-    // 3. メダル提示 (Present)
-    btnPresent.addEventListener('click', async () => {
-      const requestUrl = requestUrlInput.value.trim();
-      if (!requestUrl) {
-        alert('要求URLを貼り付けてください！');
-        return;
-      }
-
-      btnPresent.disabled = true;
-      btnPresent.innerHTML = '<span class="spinner"></span> <span>メダルを提示中...</span>';
-
-      try {
-        const response = await fetch('/api/present', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ request_url: requestUrl })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to present medal');
-        }
-
-        alert('✓ メダルを正常に提示しました！\nVerifier画面を確認してください。');
-        requestUrlInput.value = '';
-
-      } catch (err) {
-        alert('エラーが発生しました: ' + err.message);
-        console.error(err);
-      } finally {
-        btnPresent.disabled = false;
-        btnPresent.innerHTML = '<span>📤 メダルを提示（検証）する</span>';
-      }
-    });
-
-    // 初回ロード
     window.addEventListener('DOMContentLoaded', loadCredentials);
   </script>
 </body>

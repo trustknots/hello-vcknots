@@ -13,22 +13,28 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/trustknots/vcknots/wallet"
+	"github.com/trustknots/vcknots/wallet/credential"
 	"github.com/trustknots/vcknots/wallet/credstore"
 	"github.com/trustknots/vcknots/wallet/credstore/plugins/local"
 	"github.com/trustknots/vcknots/wallet/env"
 	"github.com/trustknots/vcknots/wallet/idprof"
 	"github.com/trustknots/vcknots/wallet/presenter"
 	"github.com/trustknots/vcknots/wallet/presenter/plugins/oid4vp"
+	presenterTypes "github.com/trustknots/vcknots/wallet/presenter/types"
 	"github.com/trustknots/vcknots/wallet/receiver"
 	receiverTypes "github.com/trustknots/vcknots/wallet/receiver/types"
 	"github.com/trustknots/vcknots/wallet/serializer"
+	sdjwtvc "github.com/trustknots/vcknots/wallet/serializer/plugins/sdjwtvc"
 	"github.com/trustknots/vcknots/wallet/verifier"
 )
 
 var (
-	appWallet *wallet.Wallet
-	demoKey   *demoKeyEntry
+	appWallet     *wallet.Wallet
+	demoKey       *demoKeyEntry
+	appSerializer *serializer.SerializationDispatcher
+	appPresenter  *presenter.PresentationDispatcher
 )
 
 type ReceiveRequest struct {
@@ -36,7 +42,8 @@ type ReceiveRequest struct {
 }
 
 type PresentRequest struct {
-	RequestURL string `json:"request_url"`
+	RequestURL   string `json:"request_url"`
+	CredentialID string `json:"credential_id,omitempty"`
 }
 
 type CredentialUIResponse struct {
@@ -70,6 +77,7 @@ func newWallet(certPath string, credentialStorePath string) (*wallet.Wallet, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create serializer: %w", err)
 	}
+	appSerializer = serializerDispatcher
 
 	verifierDispatcher, err := verifier.NewVerificationDispatcher(verifier.WithDefaultConfig())
 	if err != nil {
@@ -93,6 +101,7 @@ func newWallet(certPath string, credentialStorePath string) (*wallet.Wallet, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create presenter: %w", err)
 	}
+	appPresenter = presenterDispatcher
 
 	idProf, err := idprof.NewIdentityProfileDispatcher(idprof.WithDefaultConfig())
 	if err != nil {
@@ -305,6 +314,115 @@ func handleReceiveCredential(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// presentCredentialByID は credential_id で指定した VC を提示するための独自実装。
+//
+// TODO(improvement): ライブラリ側（wallet.PresentCredentialWithOptions）が
+// 提示する VC を ID で指定できるようになったら、この関数を削除して置き換える。
+// 根拠: vcknots/wallet/wallet.go selectCredentialsForPresentation() は
+// newestCredentials(entries, 1) を固定で呼ぶため、外部から VC を指定できない。
+func presentCredentialByID(requestURL, credentialID string, key wallet.IKeyEntry) error {
+	// 1. リクエスト解析 (wallet.go parseAuthorizationRequest 相当)
+	req, err := appPresenter.ParseRequestURI(requestURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse request URI: %w", err)
+	}
+	if req.RedirectURI == "" {
+		return fmt.Errorf("redirect_uri is not specified")
+	}
+	if req.DcqlQuery == nil {
+		return fmt.Errorf("dcql_query is not specified")
+	}
+
+	var endpoint *url.URL
+	if req.ResponseMode == oid4vp.OAuthAuthzReqResponseModeDirectPost {
+		if req.ResponseURI == "" {
+			return fmt.Errorf("response_uri is not specified for response_mode=direct_post")
+		}
+		endpoint, err = url.Parse(req.ResponseURI)
+	} else {
+		endpoint, err = url.Parse(req.RedirectURI)
+	}
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URI: %w", err)
+	}
+
+	// 2. 指定 ID の VC 取得 (selectCredentialsForPresentation の代替)
+	savedCred, err := appWallet.GetCredentialEntry(credentialID)
+	if err != nil {
+		return fmt.Errorf("failed to get credential: %w", err)
+	}
+	if savedCred == nil {
+		return fmt.Errorf("credential not found: %s", credentialID)
+	}
+
+	// 3. シリアライズフォーマット取得
+	flavor, err := savedCred.Entry.SerializationFlavor()
+	if err != nil {
+		return fmt.Errorf("failed to get serialization flavor: %w", err)
+	}
+
+	// 4. シリアライズオプション取得・適用 (wallet.go applyOID4VPRequestOptions 相当)
+	serializeOptions, err := appSerializer.GetDefaultOption(flavor)
+	if err != nil {
+		return fmt.Errorf("failed to get default serialization option: %w", err)
+	}
+	if serializeOptions != nil && req.OAuthAuthzRequest != nil {
+		serializeOptions.SetAudience(req.ClientID)
+		serializeOptions.SetNonce(req.Nonce)
+	}
+
+	// 5. Presentation 構築 (wallet.go buildPresentation 相当)
+	did, err := appWallet.GenerateDID(wallet.DIDCreateOptions{
+		TypeID:    "did:key",
+		PublicKey: key.PublicKey(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to generate DID: %w", err)
+	}
+	presentation := &credential.CredentialPresentation{
+		ID:          "urn:uuid:" + uuid.New().String(),
+		Types:       []string{"VerifiablePresentation"},
+		Credentials: [][]byte{savedCred.Entry.Raw},
+		Holder:      did.ID,
+		Nonce:       &req.Nonce,
+	}
+
+	// 6. SD-JWT トランザクションデータ設定 (wallet.go submitPresentation 相当)
+	if len(req.TransactionData) > 0 {
+		if sdOpts, ok := serializeOptions.(*sdjwtvc.SdJwtVcPresentationOptions); ok && sdOpts != nil {
+			alg := req.TransactionDataHashesAlg
+			if alg == "" {
+				alg = "sha-256"
+			}
+			sdOpts.TransactionData = req.TransactionData
+			sdOpts.TransactionDataHashesAlg = alg
+		}
+	}
+
+	// 7. Presentation シリアライズ
+	bytes, _, err := appSerializer.SerializePresentation(flavor, presentation, key, serializeOptions)
+	if err != nil {
+		return fmt.Errorf("failed to serialize presentation: %w", err)
+	}
+
+	// 8. Verifier へ送信
+	if len(req.DcqlQuery.Credentials) == 0 {
+		return fmt.Errorf("dcql_query contains no credentials")
+	}
+	presentationReq := &presenterTypes.PresentationRequest{
+		State:             req.State,
+		CredentialQueryID: req.DcqlQuery.Credentials[0].ID,
+		ClientMetadata:    req.ClientMetadata,
+	}
+	if req.ClientMetadata != nil {
+		presentationReq.AuthorizationEncryptedRespAlg = req.ClientMetadata.AuthorizationEncryptedResponseAlg
+		presentationReq.AuthorizationEncryptedRespEnc = req.ClientMetadata.AuthorizationEncryptedResponseEnc
+	}
+
+	_, err = appPresenter.Present(presenter.Oid4vp, *endpoint, bytes, presentationReq)
+	return err
+}
+
 // 3. Request URL による Credential の提示 (Presentation)
 func handlePresentCredential(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -325,9 +443,13 @@ func handlePresentCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestURL := req.RequestURL
-	log.Printf("[wallet] Presenting credential for request URL: %s", requestURL)
+	log.Printf("[wallet] Presenting credential for request URL: %s (credential_id: %q)", requestURL, req.CredentialID)
 
-	_, err = appWallet.PresentCredential(requestURL, demoKey, nil)
+	if req.CredentialID != "" {
+		err = presentCredentialByID(requestURL, req.CredentialID, demoKey)
+	} else {
+		_, err = appWallet.PresentCredential(requestURL, demoKey, nil)
+	}
 	if err != nil {
 		log.Printf("[wallet] PresentCredential failed: %v", err)
 		writeJSONError(w, "Failed to present credential: "+err.Error(), http.StatusInternalServerError)

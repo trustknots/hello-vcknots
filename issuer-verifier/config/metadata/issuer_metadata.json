@@ -66,6 +66,15 @@
 								"locale": "en-US"
 							}
 						]
+					},
+					{
+						"path": ["credentialSubject", "user_level"],
+						"display": [
+							{
+								"name": "User Level",
+								"locale": "en-US"
+							}
+						]
 					}
 				]
 			}
