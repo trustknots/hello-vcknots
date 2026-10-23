@@ -127,7 +127,7 @@ Wallet Web UI: http://localhost:8082
 <img src="docs/screenshots/step2-wallet-01.png" alt="Wallet: Offer URL 入力" width="600">
 
 4. OpenID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VC Knots User Medal」** カードが追加されます！
-5. カード内の **「Username」** が Issuer で入力した名前になっていること、および発行日やステータスが正しく描画されていることを確認します。
+5. カード内の **「Username」** が Issuer で入力した名前になっていること、および発行日が正しく描画されていることを確認します。
 
 <img src="docs/screenshots/step2-wallet-02.png" alt="Wallet: メダル獲得後のコレクション表示" width="600">
 
@@ -149,14 +149,22 @@ Wallet Web UI: http://localhost:8082
 
 <img src="docs/screenshots/step3-wallet-03.png" alt="Wallet: メダル提示 Request URL 入力" width="600">
 
-8. 提示が成功すると、Wallet 側で「提示に成功しました！」と表示されます。
+8. 提示するメダル（VC）を選択し、**「✓ この VC で提示する」** ボタンをクリックします。
+
+<img src="docs/screenshots/step3-wallet-06.png" alt="Wallet: 提示する VC の選択" width="600">
+
+9. 提示が成功すると、Wallet 側で「✓ メダルを正常に提示しました！」とダイアログが表示されます。
 
 <img src="docs/screenshots/step3-wallet-04.png" alt="Wallet: 提示成功" width="600">
 
-9. **Verifier 画面** に戻ると、ポーリングによって提示された VC をリアルタイムで検証・検知し、自動的に **歓迎画面（Welcome to VC Knots!）** に切り替わります！🎉
-10. 歓迎カードに、あなたがメダル獲得時に入力したユーザー名（例: `Welcome to VC Knots, Taro! 🏅`）が大きなフラットバナーで表示され、メダルの署名の真正性や検証時間が美しくフラットに表示されていることを確認してください。
+10. **Verifier 画面** に戻ると、ポーリングによって提示された VC をリアルタイムで検証・検知し、自動的に **歓迎画面（Welcome to VC Knots!）** に切り替わります！🎉
+11. 歓迎カードに、あなたがメダル獲得時に入力したユーザー名（例: `Welcome to VC Knots, Taro! 🏅`）が大きなフラットバナーで表示され、メダルの真正性が正常に検証されたことを確認してください。
 
 <img src="docs/screenshots/step3-verifier-05.png" alt="Verifier: Welcome to VC Knots! ウェルカム画面" width="600">
+
+12. 提示されたVCの詳細情報は **「VC詳細情報」** をクリックで展開されます。
+
+<img src="docs/screenshots/step3-verifier-06.png" alt="Verifier: Welcome to VC Knots! ウェルカム画面" width="600">
 
 ---
 
