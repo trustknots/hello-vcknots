@@ -17,9 +17,6 @@ import { VcknotsContext } from '@trustknots/vcknots'
 
 export const globalState = {
   currentUsername: 'VC Knots Explorer',
-  lastVerifiedUsername: '',
-  verificationStatus: 'idle' as 'idle' | 'verified',
-  lastVerifiedVc: null as Record<string, unknown> | null,
 }
 
 export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl: string) => {
@@ -32,9 +29,6 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
       const body = await c.req.json().catch(() => ({}))
       const username = ((body.username as string) || 'VC Knots Explorer').trim()
       globalState.currentUsername = username
-      globalState.verificationStatus = 'idle'
-      globalState.lastVerifiedUsername = ''
-      globalState.lastVerifiedVc = null
       console.log(`[hello-vcknots] Setup demo user: ${username}`)
       return c.json({ ok: true, username })
     } catch (e: unknown) {
@@ -126,17 +120,32 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
   const verifierFlow = initializeVerifierFlow(context)
   type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
 
-  const stateToTransactionId = new Map<string, string>()
+  const verifications = new Map<string, {
+    transactionId?: string
+    status: 'idle' | 'verified'
+    username: string
+    vc: Record<string, unknown> | null
+  }>()
 
   router.get('/api/status', (c) => {
+    c.header('Cache-Control', 'no-store')
+    const state = c.req.query('state')
+    if (!state) {
+      return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
+    }
+    const verification = verifications.get(state)
+    if (!verification) {
+      return c.json({ error: 'invalid_request', error_description: 'Unknown state' }, 404)
+    }
     return c.json({
-      status: globalState.verificationStatus,
-      username: globalState.lastVerifiedUsername,
-      vc: globalState.lastVerifiedVc,
+      status: verification.status,
+      username: verification.username,
+      vc: verification.vc,
     })
   })
 
   router.post('/request', async (c) => {
+    let reservedState: string | undefined
     try {
       const verifierId = VerifierClientId(verifierBaseUrl)
       const body: Record<string, unknown> = await c.req.json<Record<string, unknown>>().catch(() => ({}))
@@ -159,6 +168,12 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
       if (!state) {
         return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
       }
+      if (verifications.has(state)) {
+        return c.json({ error: 'invalid_request', error_description: 'state is already in use' }, 409)
+      }
+      // Reserve before awaiting request creation so concurrent requests cannot reuse a state.
+      verifications.set(state, { status: 'idle', username: '', vc: null })
+      reservedState = state
 
       const query: AuthzQueryInput = inputQuery ?? {
         dcql_query: {
@@ -188,7 +203,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
         }
       )
 
-      stateToTransactionId.set(state, transactionId)
+      verifications.get(state)!.transactionId = transactionId
 
       const encoded = Object.entries({ ...request, state })
         .map(([key, value]) => {
@@ -199,6 +214,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
 
       return c.text(`openid4vp://authorize?${encoded}`)
     } catch (err: unknown) {
+      if (reservedState) verifications.delete(reservedState)
       const message = err instanceof Error ? err.message : 'Unknown error'
       return c.json({ error: 'internal_server_error', error_description: message }, 500)
     }
@@ -215,8 +231,9 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
         return c.json({ error: 'invalid_request', error_description: 'state and vp_token are required' }, 400)
       }
 
-      const transactionId = stateToTransactionId.get(state)
-      if (!transactionId) {
+      const verification = verifications.get(state)
+      const transactionId = verification?.transactionId
+      if (!verification || !transactionId) {
         return c.json({ error: 'invalid_request', error_description: 'Unknown or expired state' }, 400)
       }
 
@@ -233,7 +250,7 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
       })
 
       const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId)
-      stateToTransactionId.delete(state)
+      delete verification.transactionId
 
       console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload))
 
@@ -263,9 +280,9 @@ export const createVerifierCustomRouter = (context: VcknotsContext, verifierBase
         console.warn('[hello-vcknots] Failed to extract username from payload:', ex)
       }
 
-      globalState.lastVerifiedUsername = verifiedUsername
-      globalState.lastVerifiedVc = verifiedVc
-      globalState.verificationStatus = 'verified'
+      verification.username = verifiedUsername
+      verification.vc = verifiedVc
+      verification.status = 'verified'
 
       console.log(`[hello-vcknots] Verifier successfully verified medal for: "${verifiedUsername}"`)
 

@@ -131,6 +131,7 @@
     const btnSelectVc = document.getElementById('btnSelectVc');
     const btnConfirmPresent = document.getElementById('btnConfirmPresent');
     const btnCancelSelect = document.getElementById('btnCancelSelect');
+    let isPresenting = false;
 
     // タブ切り替え
     tabReceiveBtn.addEventListener('click', () => {
@@ -214,6 +215,7 @@
         card.appendChild(body);
 
         radio.addEventListener('change', () => {
+          if (isPresenting) return;
           document.querySelectorAll('.vc-select-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
           btnConfirmPresent.disabled = false;
@@ -232,18 +234,23 @@
 
     // 戻るボタン
     btnCancelSelect.addEventListener('click', () => {
+      if (isPresenting) return;
       vcSelectStep.style.display = 'none';
       urlInputStep.style.display = 'block';
     });
 
     // 提示実行
     btnConfirmPresent.addEventListener('click', async () => {
+      if (isPresenting) return;
       const selected = document.querySelector('input[name="vcChoice"]:checked');
       if (!selected) return;
 
       const credentialId = selected.value;
       const requestUrl = requestUrlInput.value.trim();
 
+      isPresenting = true;
+      btnCancelSelect.disabled = true;
+      vcSelectList.querySelectorAll('input[name="vcChoice"]').forEach(radio => radio.disabled = true);
       btnConfirmPresent.disabled = true;
       btnConfirmPresent.innerHTML = '<span class="spinner"></span> <span>提示中...</span>';
 
@@ -268,6 +275,9 @@
         alert('エラーが発生しました: ' + err.message);
         console.error(err);
       } finally {
+        isPresenting = false;
+        btnCancelSelect.disabled = false;
+        vcSelectList.querySelectorAll('input[name="vcChoice"]').forEach(radio => radio.disabled = false);
         btnConfirmPresent.disabled = false;
         btnConfirmPresent.innerHTML = '<span>✓ この VC で提示する</span>';
       }

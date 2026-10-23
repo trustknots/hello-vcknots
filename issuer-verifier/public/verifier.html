@@ -221,6 +221,7 @@
     const verifiedUserSpan = document.getElementById('verifiedUser');
 
     let pollingInterval = null;
+    let activeState = null;
 
     // 1. 検証要求 (Request Object) の生成
     btnStart.addEventListener('click', async () => {
@@ -274,7 +275,7 @@
         verifyArea.style.display = 'block';
 
         // 2. ショートポーリング開始 (2秒おき)
-        startPolling();
+        startPolling(state);
 
       } catch (err) {
         alert('エラーが発生しました: ' + err.message);
@@ -375,17 +376,24 @@
     }
 
     // ポーリング処理
-    function startPolling() {
+    function startPolling(state) {
       if (pollingInterval) clearInterval(pollingInterval);
+      activeState = state;
+      let polling = false;
 
       pollingInterval = setInterval(async () => {
+        if (polling || activeState !== state) return;
+        polling = true;
         try {
-          const res = await fetch('/api/status');
+          const res = await fetch('/api/status?state=' + encodeURIComponent(state), { cache: 'no-store' });
+          if (!res.ok) throw new Error('Failed to fetch verification status');
           const data = await res.json();
+          if (activeState !== state) return;
 
           if (data.status === 'verified') {
             clearInterval(pollingInterval);
             pollingInterval = null;
+            activeState = null;
 
             // 成功画面へ切り替え
             verifiedUserSpan.innerText = data.username || 'VC Knots Explorer';
@@ -395,6 +403,8 @@
           }
         } catch (ex) {
           console.error('[verifier] Polling error:', ex);
+        } finally {
+          polling = false;
         }
       }, 2000);
     }
@@ -412,6 +422,7 @@
 
     // リスタート
     btnRestart.addEventListener('click', () => {
+      activeState = null;
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
