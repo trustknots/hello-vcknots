@@ -355,6 +355,11 @@ func presentCredentialByID(requestURL, credentialID string, key wallet.IKeyEntry
 		return fmt.Errorf("credential not found: %s", credentialID)
 	}
 
+	// TODO(improvement): 解析済みの req.DcqlQuery と選択した VC を照合する。
+	// 現在は ID による取得のみで、format・meta・claims 等の条件への適合性は未判定。
+	// 候補抽出と共通の判定処理で送信前にも検証し、不適合・未対応の条件は送信せずエラーにする。
+	// 複数要求では credential_sets / claim_sets も考慮して、必要な VC の組み合わせを判断する。
+
 	// 3. シリアライズフォーマット取得
 	flavor, err := savedCred.Entry.SerializationFlavor()
 	if err != nil {
@@ -409,6 +414,8 @@ func presentCredentialByID(requestURL, credentialID string, key wallet.IKeyEntry
 	if len(req.DcqlQuery.Credentials) == 0 {
 		return fmt.Errorf("dcql_query contains no credentials")
 	}
+	// TODO(improvement): 先頭の要求に固定せず、選択した VC が適合する Credential Query ID に対応付ける。
+	// 複数の Credential Query を満たす必要がある場合は、選択 UI と提示処理も複数 VC に対応する。
 	presentationReq := &presenterTypes.PresentationRequest{
 		State:             req.State,
 		CredentialQueryID: req.DcqlQuery.Credentials[0].ID,

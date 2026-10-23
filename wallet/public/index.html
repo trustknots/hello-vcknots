@@ -160,6 +160,9 @@
       btnSelectVc.innerHTML = '<span class="spinner"></span> <span>メダルを読み込み中...</span>';
 
       try {
+        // TODO(improvement): requestUrl の Authorization Request をサーバー側で解析し、
+        // DCQL の条件に適合する VC のみを提示候補として取得する。現在は保有 VC の全件表示。
+        // 保有一覧用の /api/credentials と提示候補の取得を分け、該当する Credential Query ID も保持する。
         const response = await fetch('/api/credentials');
         const credentials = await response.json();
         if (!credentials || credentials.length === 0) {
