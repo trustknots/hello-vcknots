@@ -1,5 +1,5 @@
 import { parseDpopHeader, VcknotsContext } from '@trustknots/vcknots'
-import { VcknotsError } from '@trustknots/vcknots/errors'
+import { err, VcknotsError } from '@trustknots/vcknots/errors'
 import {
   AuthorizationServerIssuer,
   AuthzTokenRequest,
@@ -7,10 +7,15 @@ import {
 } from '@trustknots/vcknots/authz'
 import { Context, Hono } from 'hono'
 import { handleError } from '../utils/error-handler.js'
+import type { IssuanceSessionStore } from '../utils/issuance-session-store.js'
 
 const DPOP_NONCE_TTL_MS = 5 * 60 * 1000
 
-export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
+export const createAuthzRouter = (
+  context: VcknotsContext,
+  baseUrl: string,
+  options: { issuanceSessions?: IssuanceSessionStore } = {}
+) => {
   const authzApp = new Hono()
 
   const authzFlow = initializeAuthzFlow(context)
@@ -83,6 +88,12 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
         )
       }
       const tokenRequest = parseResult.data
+      const code = tokenRequest.grant_type === 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
+        ? tokenRequest['pre-authorized_code'] : undefined
+      const issuance = code ? options.issuanceSessions?.getOffer(code) : undefined
+      if (code && options.issuanceSessions && !issuance) {
+        return c.json({ error: 'invalid_grant', error_description: 'Offer not found or expired' }, 400)
+      }
       const accessToken = await authzFlow.createAccessToken(issuer, tokenRequest, {
         clientId: clientResolution.clientId,
         ...(dpopMode !== 'off' && dpopProof.ok
@@ -96,6 +107,16 @@ export const createAuthzRouter = (context: VcknotsContext, baseUrl: string) => {
             }
           : { ttlSec: 60 * 30 }), // 30 minutes default ttl
       })
+      // Transfer claims only after successful code redemption; nonce challenges and errors keep the offer.
+      if (code && issuance && options.issuanceSessions) {
+        if (!('access_token' in accessToken) || typeof accessToken.access_token !== 'string'
+          || !('expires_in' in accessToken) || typeof accessToken.expires_in !== 'number') {
+          throw err('internal_server_error', { message: 'Invalid token response' })
+        }
+        if (!options.issuanceSessions.bindToken(code, issuance, accessToken.access_token, accessToken.expires_in)) {
+          throw err('invalid_grant', { message: 'Offer expired during token issuance' })
+        }
+      }
       return c.json(accessToken)
     } catch (err) {
       if (err instanceof VcknotsError && err.name === 'invalid_dpop_proof') {

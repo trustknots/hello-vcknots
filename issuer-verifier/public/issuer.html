@@ -102,20 +102,11 @@
       btnIssue.innerHTML = '<span class="spinner"></span> <span>発行中...</span>';
 
       try {
-        // A. ユーザー設定APIを叩く
-        const setupResponse = await fetch('/api/setup', {
+        // ユーザー名をOffer作成と同時に渡し、発行対象を確定する
+        const offerResponse = await fetch('/configurations/VCKnotsUserMedal/offer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username })
-        });
-        const setupData = await setupResponse.json();
-        if (!setupResponse.ok) {
-          throw new Error(setupData.error || 'Setup failed');
-        }
-
-        // B. Hono の Offer 生成 API を叩く
-        const offerResponse = await fetch('/configurations/VCKnotsUserMedal/offer', {
-          method: 'POST'
         });
         const offerUrl = await offerResponse.text();
 
@@ -123,7 +114,7 @@
           throw new Error('Offer URL generation failed');
         }
 
-        // C. 画面切り替えとQRコードレンダリング
+        // 画面切り替えとQRコードレンダリング
         offerUrlInput.value = offerUrl;
         
         // QRコード生成

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import {
   initializeIssuerFlow,
@@ -6,46 +5,40 @@ import {
   CredentialConfigurationId,
   CredentialRequest,
 } from '@trustknots/vcknots/issuer'
-import {
-  initializeVerifierFlow,
-  VerifierClientId,
-  VerifierAuthorizationResponse,
-  ClientIdentifier,
-} from '@trustknots/vcknots/verifier'
 import { AuthorizationServerIssuer, initializeAuthzFlow } from '@trustknots/vcknots/authz'
-import { VcknotsContext } from '@trustknots/vcknots'
+import { parseAuthorizationHeader, VcknotsContext } from '@trustknots/vcknots'
+import type { IssuanceSessionStore } from '../utils/issuance-session-store.js'
 
-export const globalState = {
-  currentUsername: 'VC Knots Explorer',
-}
+const PRE_AUTH_TTL_SEC = 600
 
-export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl: string) => {
+export const createIssuerCustomRouter = (
+  context: VcknotsContext,
+  issuerBaseUrl: string,
+  sessions: IssuanceSessionStore
+) => {
   const router = new Hono()
   const issuerFlow = initializeIssuerFlow(context)
   const authzFlow = initializeAuthzFlow(context)
 
-  router.post('/api/setup', async (c) => {
-    try {
-      const body = await c.req.json().catch(() => ({}))
-      const username = ((body.username as string) || 'VC Knots Explorer').trim()
-      globalState.currentUsername = username
-      console.log(`[hello-vcknots] Setup demo user: ${username}`)
-      return c.json({ ok: true, username })
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Unknown error'
-      return c.json({ error: message }, 500)
-    }
-  })
-
   router.post('/configurations/:configuration/offer', async (c) => {
     try {
+      const body: unknown = await c.req.json().catch(() => null)
+      const username = body && typeof body === 'object' && 'username' in body
+        && typeof body.username === 'string' ? body.username.trim() : ''
+      if (!username) {
+        return c.json({ error: 'invalid_request', error_description: 'username must be a non-empty string' }, 400)
+      }
       const configuration = c.req.param('configuration')
       const issuer = CredentialIssuer(issuerBaseUrl)
 
       const { offer } = await issuerFlow.offerCredential(issuer, [CredentialConfigurationId(configuration)], {
         usePreAuth: true,
-        ttlSec: 600,
+        ttlSec: PRE_AUTH_TTL_SEC,
       })
+
+      const code = offer.grants?.['urn:ietf:params:oauth:grant-type:pre-authorized_code']?.['pre-authorized_code']
+      if (!code) throw new Error('Pre-authorized code was not returned')
+      sessions.addOffer(code, username, PRE_AUTH_TTL_SEC)
 
       console.log(`[hello-vcknots] Generated offer for ${configuration}. Code-preauth.`)
       return c.text(
@@ -85,8 +78,15 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
       return c.json({ error: 'invalid_request', error_description: 'Invalid CredentialRequest' }, 400)
     }
 
+    // Authorization was verified above. Look up application claims using the same token.
+    const authorization = parseAuthorizationHeader(c.req.header('Authorization'))
+    const session = authorization.ok ? sessions.getForToken(authorization.value.token) : undefined
+    if (!session) {
+      return c.json({ error: 'invalid_request', error_description: 'Issuance session not found or expired' }, 400)
+    }
+
     const claims = {
-      username: globalState.currentUsername,
+      username: session.username,
       issued_at: new Date().toISOString(),
       medal_type: 'VC Knots User Medal',
       user_level: 'Beginner',
@@ -108,188 +108,6 @@ export const createIssuerCustomRouter = (context: VcknotsContext, issuerBaseUrl:
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       console.error('[hello-vcknots] Credential issue error:', err)
-      return c.json({ error: 'invalid_request', error_description: message }, 400)
-    }
-  })
-
-  return router
-}
-
-export const createVerifierCustomRouter = (context: VcknotsContext, verifierBaseUrl: string) => {
-  const router = new Hono()
-  const verifierFlow = initializeVerifierFlow(context)
-  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
-
-  const verifications = new Map<string, {
-    transactionId?: string
-    status: 'idle' | 'verified'
-    username: string
-    vc: Record<string, unknown> | null
-  }>()
-
-  router.get('/api/status', (c) => {
-    c.header('Cache-Control', 'no-store')
-    const state = c.req.query('state')
-    if (!state) {
-      return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
-    }
-    const verification = verifications.get(state)
-    if (!verification) {
-      return c.json({ error: 'invalid_request', error_description: 'Unknown state' }, 404)
-    }
-    return c.json({
-      status: verification.status,
-      username: verification.username,
-      vc: verification.vc,
-    })
-  })
-
-  router.post('/request', async (c) => {
-    let reservedState: string | undefined
-    try {
-      const verifierId = VerifierClientId(verifierBaseUrl)
-      const body: Record<string, unknown> = await c.req.json<Record<string, unknown>>().catch(() => ({}))
-
-      const inputQuery =
-        typeof body.query === 'object' && body.query !== null && !Array.isArray(body.query)
-          ? (body.query as AuthzQueryInput)
-          : undefined
-
-      const credentialId =
-        typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
-          ? body.credentialId
-          : undefined
-      if (!credentialId && !inputQuery) {
-        return c.json({ error: 'invalid_request', error_description: 'credentialId is required' }, 400)
-      }
-
-      const state =
-        typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined
-      if (!state) {
-        return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
-      }
-      if (verifications.has(state)) {
-        return c.json({ error: 'invalid_request', error_description: 'state is already in use' }, 409)
-      }
-      // Reserve before awaiting request creation so concurrent requests cannot reuse a state.
-      verifications.set(state, { status: 'idle', username: '', vc: null })
-      reservedState = state
-
-      const query: AuthzQueryInput = inputQuery ?? {
-        dcql_query: {
-          credentials: [
-            {
-              id: randomUUID(),
-              format: 'jwt_vc_json',
-              meta: {
-                type_values: [[credentialId as string]],
-              },
-            },
-          ],
-        },
-      }
-
-      const { request, transactionId } = await verifierFlow.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        ClientIdentifier('redirect_uri:localhost'),
-        'direct_post',
-        query,
-        false,
-        {
-          state,
-          response_uri: `${verifierBaseUrl}/callback`,
-          base_url: verifierBaseUrl,
-        }
-      )
-
-      verifications.get(state)!.transactionId = transactionId
-
-      const encoded = Object.entries({ ...request, state })
-        .map(([key, value]) => {
-          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-        })
-        .join('&')
-
-      return c.text(`openid4vp://authorize?${encoded}`)
-    } catch (err: unknown) {
-      if (reservedState) verifications.delete(reservedState)
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      return c.json({ error: 'internal_server_error', error_description: message }, 500)
-    }
-  })
-
-  router.post('/callback', async (c) => {
-    try {
-      const formData = await c.req.formData()
-
-      const state = formData.get('state')
-      const vpTokenRaw = formData.get('vp_token')
-
-      if (typeof state !== 'string' || typeof vpTokenRaw !== 'string') {
-        return c.json({ error: 'invalid_request', error_description: 'state and vp_token are required' }, 400)
-      }
-
-      const verification = verifications.get(state)
-      const transactionId = verification?.transactionId
-      if (!verification || !transactionId) {
-        return c.json({ error: 'invalid_request', error_description: 'Unknown or expired state' }, 400)
-      }
-
-      let parsedVpToken: unknown
-      try {
-        parsedVpToken = JSON.parse(vpTokenRaw)
-      } catch {
-        return c.json({ error: 'invalid_request', error_description: 'vp_token must be a JSON object' }, 400)
-      }
-
-      const authorizationResponse = VerifierAuthorizationResponse({
-        state,
-        vp_token: parsedVpToken as VerifierAuthorizationResponse['vp_token'],
-      })
-
-      const vpPayload = await verifierFlow.verifyPresentations(authorizationResponse, transactionId)
-      delete verification.transactionId
-
-      console.log('[hello-vcknots] Verified presentations successfully:', JSON.stringify(vpPayload))
-
-      let verifiedUsername = 'VC Knots Explorer'
-      let verifiedVc: Record<string, unknown> | null = null
-      try {
-        const allVps = Object.values(vpPayload).flat()
-        for (const vpEntry of allVps) {
-          const vpRecord = vpEntry as Record<string, unknown>
-          const vcArr = (vpRecord?.vp as Record<string, unknown> | undefined)?.verifiableCredential
-          const vcJwt = Array.isArray(vcArr) ? (vcArr[0] as string | undefined) : undefined
-          if (typeof vcJwt === 'string') {
-            const parts = vcJwt.split('.')
-            if (parts.length === 3 && parts[1]) {
-              const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>
-              const vc = decoded?.vc as Record<string, unknown> | undefined
-              const credSubject = vc?.credentialSubject as Record<string, unknown> | undefined
-              if (typeof credSubject?.username === 'string') {
-                verifiedUsername = credSubject.username
-              }
-              verifiedVc = decoded
-              break
-            }
-          }
-        }
-      } catch (ex) {
-        console.warn('[hello-vcknots] Failed to extract username from payload:', ex)
-      }
-
-      verification.username = verifiedUsername
-      verification.vc = verifiedVc
-      verification.status = 'verified'
-
-      console.log(`[hello-vcknots] Verifier successfully verified medal for: "${verifiedUsername}"`)
-
-      return c.json({ redirect_uri: `${verifierBaseUrl}/verified.html` }, 200)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[hello-vcknots] Verification callback error:', err)
       return c.json({ error: 'invalid_request', error_description: message }, 400)
     }
   })

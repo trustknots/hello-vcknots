@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { VcknotsContext } from '@trustknots/vcknots'
+import { err } from '@trustknots/vcknots/errors'
 import {
   ClientIdentifier,
   VerifierAuthorizationResponse,
@@ -8,444 +9,233 @@ import {
   VerifierRequestObjectId,
   initializeVerifierFlow,
 } from '@trustknots/vcknots/verifier'
-import { Hono } from 'hono'
-import { createDirectPostVpAudTransactionStore } from '../utils/direct-post-vp-aud-transaction-store.js'
+import { Context, Hono } from 'hono'
+import { extractVerificationResult } from '../app/verification-result.js'
+import {
+  createVerificationSessionStore,
+  type VerificationSession,
+  type VerificationSessionStore,
+} from '../utils/verification-session-store.js'
 import { handleError } from '../utils/error-handler.js'
 
-export const createVerifierRouter = (context: VcknotsContext, baseUrl: string) => {
+export const createVerifierRouter = (
+  context: VcknotsContext,
+  baseUrl: string,
+  options: { sessions?: VerificationSessionStore } = {}
+) => {
   const verifyApp = new Hono()
-
   const verifierFlow = initializeVerifierFlow(context)
-  const vpAudTx = createDirectPostVpAudTransactionStore()
+  const sessions = options.sessions ?? createVerificationSessionStore({
+    onDiscard: (transactionId) => {
+      void verifierFlow.deleteTransaction(transactionId).catch((error: unknown) => {
+        console.error('[verify] Failed to delete expired transaction:', error)
+      })
+    },
+  })
+  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
+  type CreatedRequest = Awaited<ReturnType<typeof verifierFlow.createAuthzRequest>>
 
-  type PayloadResult =
-    | { ok: true; payload: Partial<VerifierAuthorizationResponse> }
-    | { ok: false; error: { error: string; error_description: string } }
-  const normalizeContentType = (value: string) => value.split(';')[0]?.trim().toLowerCase() ?? ''
-  const parseFormPayload = (form: FormData): PayloadResult => {
-    const payload: Partial<VerifierAuthorizationResponse> = {}
-    const vpTokenRaw = form.get('vp_token')
-    if (typeof vpTokenRaw === 'string' && vpTokenRaw.trim()) {
-      let parsedVpToken: unknown
-      try {
-        parsedVpToken = JSON.parse(vpTokenRaw)
-      } catch {
-        return {
-          ok: false,
-          error: {
-            error: 'invalid_request',
-            error_description: 'vp_token must be a JSON object',
-          },
-        }
-      }
-      if (
-        typeof parsedVpToken !== 'object' ||
-        parsedVpToken === null ||
-        Array.isArray(parsedVpToken)
-      ) {
-        return {
-          ok: false,
-          error: {
-            error: 'invalid_request',
-            error_description: 'vp_token must be a JSON object',
-          },
-        }
-      }
-      payload.vp_token = parsedVpToken as VerifierAuthorizationResponse['vp_token']
+  const defaultQuery = (credentialId: string): AuthzQueryInput => ({
+    dcql_query: {
+      credentials: [{
+        id: randomUUID(), format: 'jwt_vc_json', meta: { type_values: [[credentialId]] },
+      }],
+    },
+  })
+  const objectValue = (value: unknown): Record<string, unknown> | undefined =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown> : undefined
+  const nonEmptyString = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim() : undefined
+  const requestUrl = (request: CreatedRequest['request']) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(request)) {
+      if (value !== undefined) params.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value))
     }
-    const state = form.get('state')
-    if (typeof state === 'string') {
-      payload.state = state
+    return 'openid4vp://authorize?' + params.toString()
+  }
+  const errorResponse = (c: Context, error: unknown) => {
+    const body = handleError(error)
+    return c.json(body, body.error === 'internal_server_error' ? 500 : 400)
+  }
+  const validateClientId = (value: unknown, fallback: string): ClientIdentifier => {
+    const clientId = nonEmptyString(value) ?? fallback
+    const prefix = clientId.split(':')[0] as VerifierClientIdPrefix
+    if (!['redirect_uri', 'x509_san_dns'].includes(prefix)) {
+      throw err('invalid_request', { message: 'Invalid client_id format' })
     }
-    return { ok: true, payload }
+    return ClientIdentifier(clientId)
   }
 
-  const canHandleClientIdScheme: VerifierClientIdPrefix[] = ['redirect_uri', 'x509_san_dns']
-  function validateClientIdScheme(client_id: string): ClientIdentifier {
-    if (client_id == null || client_id === '') {
-      return 'x509_san_dns:localhost'
+  // Bind both request delivery modes before returning a URL to the wallet.
+  const saveRequest = async (
+    state: string,
+    reservation: VerificationSession,
+    create: () => Promise<CreatedRequest>
+  ): Promise<CreatedRequest['request']> => {
+    let transactionId: string | undefined
+    try {
+      const created = await create()
+      transactionId = created.transactionId
+      const transaction = await verifierFlow.getTransaction(transactionId)
+      if (!sessions.register(state, reservation, transactionId, transaction.expiresAt)) {
+        throw err('invalid_request', { message: 'Request expired during creation' })
+      }
+      return created.request
+    } catch (error) {
+      sessions.remove(state, reservation)
+      if (transactionId) await verifierFlow.deleteTransaction(transactionId)
+      throw error
     }
-    const m = client_id.match(/^([^:]+):(.+)$/)
-    const prefix = m?.[1]
-    if (!prefix || !canHandleClientIdScheme.includes(prefix as VerifierClientIdPrefix)) {
-      throw new Error('Invalid client_id format')
-    }
-    return ClientIdentifier(client_id)
   }
+
+  verifyApp.get('/api/status', (c) => {
+    c.header('Cache-Control', 'no-store')
+    const state = nonEmptyString(c.req.query('state'))
+    if (!state) return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
+    const session = sessions.get(state)
+    if (!session) {
+      return c.json({ error: 'invalid_request', error_description: 'Unknown or expired state' }, 404)
+    }
+    return c.json({
+      status: session.status === 'verified' ? 'verified' : 'idle',
+      username: session.username,
+      vc: session.vc,
+    })
+  })
 
   verifyApp.post('/request', async (c) => {
     try {
-      const verifierId = VerifierClientId(baseUrl)
-      type Payload = Record<string, unknown>
-      const body: Payload = await c.req.json<Payload>().catch(() => ({}))
-
-      const credentialId =
-        typeof body.credentialId === 'string' && body.credentialId.trim() !== ''
-          ? body.credentialId
-          : undefined
-
-      if (!credentialId) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'credentialId must be a non-empty string.',
-          },
-          400
-        )
+      const body = objectValue(await c.req.json().catch(() => null))
+      if (!body) return c.json({ error: 'invalid_request', error_description: 'Request body must be a JSON object' }, 400)
+      const credentialId = nonEmptyString(body.credentialId)
+      const inputQuery = objectValue(body.query) as AuthzQueryInput | undefined
+      if (!credentialId && !inputQuery) {
+        return c.json({ error: 'invalid_request', error_description: 'credentialId or query is required' }, 400)
       }
-      const state =
-        typeof body.state === 'string' && body.state.trim() !== '' ? body.state.trim() : undefined
-      if (state === undefined) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'state is required.',
-          },
-          400
-        )
-      }
-      const client_id = validateClientIdScheme(
-        (body.client_id as string) ?? 'redirect_uri:localhost'
-      )
-
-      const query = {
-        dcql_query: {
-          credentials: [
-            {
-              id: randomUUID(),
-              format: 'jwt_vc_json',
-              meta: {
-                type_values: [[credentialId]],
-              },
-            },
-          ],
-        },
-      }
-
-      const reserved = vpAudTx.reserve(state)
-      if (!reserved.ok) {
-        return c.json(reserved.error, 400)
-      }
-      const { request, transactionId: verifierTxId } = await verifierFlow
-        .createAuthzRequest(verifierId, 'vp_token', client_id, 'direct_post', query, false, {
-          state,
-          response_uri: `${baseUrl}/callback`,
-          base_url: baseUrl,
-        })
-        .catch((err: unknown) => {
-          vpAudTx.consume(state)
-          throw err
-        })
-      vpAudTx.register(state, verifierTxId)
-      console.log('[verify] direct_post transaction_id:', verifierTxId)
-
-      const encoded = Object.entries({ ...request, state })
-        .map(([key, value]) => {
-          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-        })
-        .join('&')
-
-      return c.text(`openid4vp://authorize?${encoded}`)
-    } catch (err) {
-      const errorResponse = handleError(err)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
+      const state = nonEmptyString(body.state)
+      if (!state) return c.json({ error: 'invalid_request', error_description: 'state is required' }, 400)
+      const clientId = validateClientId(body.client_id, 'redirect_uri:localhost')
+      const reservation = sessions.reserve(state)
+      if (!reservation) return c.json({ error: 'invalid_request', error_description: 'state is already in use' }, 409)
+      const request = await saveRequest(state, reservation, () => verifierFlow.createAuthzRequest(
+        VerifierClientId(baseUrl), 'vp_token', clientId, 'direct_post',
+        inputQuery ?? defaultQuery(credentialId!), false,
+        { state, response_uri: baseUrl + '/callback', base_url: baseUrl }
+      ))
+      return c.text(requestUrl(request))
+    } catch (error) {
+      return errorResponse(c, error)
     }
   })
-
-  // Receive the vp_token from the request and verify it
-  verifyApp.post('/callback', async (c) => {
-    try {
-      const contentType = normalizeContentType(c.req.header('content-type') ?? '')
-
-      if (contentType !== 'application/x-www-form-urlencoded') {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'content-type must be application/x-www-form-urlencoded',
-          },
-          400
-        )
-      }
-
-      const formData = await c.req.formData().catch(() => null)
-      if (!formData) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Request body must be a valid form data.',
-          },
-          400
-        )
-      }
-      const parsed = parseFormPayload(formData)
-
-      if (!parsed.ok) {
-        return c.json(parsed.error, 400)
-      }
-
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
-      if (!resolved.ok) {
-        return c.json(resolved.error, 400)
-      }
-      const vpPayload = await verifierFlow.verifyPresentations(
-        authorizationResponse,
-        resolved.transactionId
-      )
-      vpAudTx.consume(authorizationResponse.state ?? '')
-      console.log('Verified VP Payload:', vpPayload)
-      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
-    } catch (err) {
-      const errorResponse = handleError(err)
-      console.log('error Response:', errorResponse)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
-    }
-  })
-
-  verifyApp.post('/callback-kbjwt', async (c) => {
-    try {
-      console.log('callback-kbjwt')
-      const contentType = normalizeContentType(c.req.header('content-type') ?? '')
-
-      if (contentType !== 'application/x-www-form-urlencoded') {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'content-type must be application/x-www-form-urlencoded',
-          },
-          400
-        )
-      }
-      const formData = await c.req.formData().catch(() => null)
-      if (!formData) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Request body must be a valid form data.',
-          },
-          400
-        )
-      }
-      const parsed = parseFormPayload(formData)
-      if (!parsed.ok) {
-        return c.json(parsed.error, 400)
-      }
-
-      const authorizationResponse = VerifierAuthorizationResponse(parsed.payload)
-      const resolved = vpAudTx.resolve(authorizationResponse.state)
-      if (!resolved.ok) {
-        return c.json(resolved.error, 400)
-      }
-      const vpPayload = await verifierFlow.verifyPresentations(
-        authorizationResponse,
-        resolved.transactionId,
-        { isKbJwt: true }
-      )
-      vpAudTx.consume(authorizationResponse.state ?? '')
-      console.log('Verified KBJWT VP Payload:', vpPayload)
-      return c.json({ redirect_uri: `${baseUrl}/verified` }, 200)
-    } catch (err) {
-      const errorResponse = handleError(err)
-      console.log('error Response:', errorResponse)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
-    }
-  })
-
-  // Create the request in JAR format
-  type AuthzQueryInput = Parameters<typeof verifierFlow.createAuthzRequest>[4]
-  type RequestObjectShape = {
-    query: AuthzQueryInput
-    state: string
-    base_url: string
-    is_request_uri: boolean
-    client_id: ClientIdentifier
-    is_transaction_data: boolean
-    response_uri?: string
-  }
-  type RequestObjectInput = Partial<
-    Omit<RequestObjectShape, 'query' | 'client_id'> & {
-      query: unknown
-      client_id: string
-    }
-  >
 
   verifyApp.post('/request-object', async (c) => {
-    // TODO: Sample
-    const dcqlQuery = {
-      dcql_query: {
-        credentials: [
-          {
-            id: randomUUID(),
-            format: 'jwt_vc_json',
-            meta: {
-              type_values: [['VerifiableCredential']],
-            },
-          },
-        ],
-      },
-    }
-
-    const raw = await c.req.text()
-    let parsed: unknown = {}
-    if (raw.trim()) {
-      try {
-        parsed = JSON.parse(raw)
-      } catch (e) {
-        return c.json(
-          { error: 'invalid_request', error_description: 'Request body must be valid JSON' },
-          400
-        )
-      }
-    }
-    const input = parsed && typeof parsed === 'object' ? (parsed as RequestObjectInput) : {}
-    const requestObject: RequestObjectShape = {
-      query:
-        typeof input.query === 'object' && input.query !== null && !Array.isArray(input.query)
-          ? input.query
-          : dcqlQuery,
-      state:
-        typeof input.state === 'string' && input.state.trim() !== ''
-          ? input.state
-          : randomUUID().replaceAll('-', ''),
-      base_url:
-        typeof input.base_url === 'string' && input.base_url.trim() !== ''
-          ? input.base_url
-          : baseUrl,
-      is_request_uri: typeof input.is_request_uri === 'boolean' ? input.is_request_uri : true,
-      is_transaction_data:
-        typeof input.is_transaction_data === 'boolean' ? input.is_transaction_data : false,
-      response_uri:
-        typeof input.response_uri === 'string' && input.response_uri.trim() !== ''
-          ? input.response_uri
-          : undefined,
-      client_id:
-        typeof input.client_id === 'string' && input.client_id.trim() !== ''
-          ? validateClientIdScheme(input.client_id)
-          : 'x509_san_dns:localhost',
-    }
-
-    let reserved: ReturnType<typeof vpAudTx.reserve> | undefined
     try {
-      reserved = vpAudTx.reserve(requestObject.state)
-      if (!reserved.ok) {
-        return c.json(reserved.error, 400)
-      }
-      const verifierId = VerifierClientId(baseUrl)
-      const { request, transactionId: verifierTxId } = await verifierFlow.createAuthzRequest(
-        verifierId,
-        'vp_token',
-        requestObject.client_id,
-        'direct_post',
-        requestObject.query,
-        requestObject.is_request_uri,
+      const raw = await c.req.text()
+      const body = raw.trim() ? objectValue(JSON.parse(raw)) : {}
+      if (!body) return c.json({ error: 'invalid_request', error_description: 'Request body must be a JSON object' }, 400)
+      const state = nonEmptyString(body.state) ?? randomUUID().replaceAll('-', '')
+      const query = objectValue(body.query) as AuthzQueryInput | undefined
+      const clientId = validateClientId(body.client_id, 'x509_san_dns:localhost')
+      const reservation = sessions.reserve(state)
+      if (!reservation) return c.json({ error: 'invalid_request', error_description: 'state is already in use' }, 409)
+      const request = await saveRequest(state, reservation, () => verifierFlow.createAuthzRequest(
+        VerifierClientId(baseUrl), 'vp_token', clientId, 'direct_post',
+        query ?? defaultQuery('VerifiableCredential'),
+        typeof body.is_request_uri === 'boolean' ? body.is_request_uri : true,
         {
-          state: requestObject.state,
-          base_url: baseUrl,
-          response_uri: requestObject.response_uri ?? `${baseUrl}/callback`,
-          request_uri: `${baseUrl}/request.jwt`,
-          ...(requestObject.is_transaction_data
-            ? { transaction_data: { type: 'sample_type' } }
-            : {}),
+          state, base_url: baseUrl,
+          response_uri: nonEmptyString(body.response_uri) ?? baseUrl + '/callback',
+          request_uri: baseUrl + '/request.jwt',
+          ...(body.is_transaction_data === true ? { transaction_data: { type: 'sample_type' } } : {}),
         }
-      )
-      vpAudTx.register(requestObject.state, verifierTxId)
-      console.log('[verify] direct_post transaction_id:', verifierTxId)
-      const encoded = Object.entries(request)
-        .map(([key, value]) => {
-          const encode = value && typeof value === 'object' ? JSON.stringify(value) : String(value)
-          return `${encodeURIComponent(key)}=${encodeURIComponent(encode)}`
-        })
-        .join('&')
-
-      return c.text(`openid4vp://authorize?${encoded}`)
-    } catch (err) {
-      if (reserved?.ok) {
-        vpAudTx.consume(requestObject.state)
+      ))
+      return c.text(requestUrl(request))
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return c.json({ error: 'invalid_request', error_description: 'Request body must be valid JSON' }, 400)
       }
-      const errorResponse = handleError(err)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
+      return errorResponse(c, error)
     }
   })
+
+  const callback = async (c: Context, isKbJwt: boolean) => {
+    let claimed: VerificationSession | undefined
+    let state: string | undefined
+    try {
+      const contentType = c.req.header('content-type')?.split(';')[0]?.trim().toLowerCase()
+      if (contentType !== 'application/x-www-form-urlencoded') {
+        return c.json({ error: 'invalid_request', error_description: 'content-type must be application/x-www-form-urlencoded' }, 400)
+      }
+      const form = await c.req.formData()
+      state = nonEmptyString(form.get('state'))
+      const raw = form.get('vp_token')
+      if (!state || typeof raw !== 'string') {
+        return c.json({ error: 'invalid_request', error_description: 'state and vp_token are required' }, 400)
+      }
+      const vpToken = objectValue(JSON.parse(raw))
+      if (!vpToken) return c.json({ error: 'invalid_request', error_description: 'vp_token must be a JSON object' }, 400)
+      const response = VerifierAuthorizationResponse({
+        state, vp_token: vpToken as VerifierAuthorizationResponse['vp_token'],
+      })
+      claimed = sessions.claim(state)
+      if (!claimed) {
+        return c.json({ error: 'invalid_request', error_description: 'Unknown, expired or already used state' }, 400)
+      }
+      const payload = await verifierFlow.verifyPresentations(response, claimed.transactionId!, { isKbJwt })
+      if (!sessions.complete(state, claimed, extractVerificationResult(payload))) {
+        return c.json({ error: 'invalid_request', error_description: 'Verification session has expired' }, 400)
+      }
+      return c.json({ redirect_uri: baseUrl + '/verified' })
+    } catch (error) {
+      if (state && claimed) sessions.release(state, claimed)
+      if (error instanceof SyntaxError) {
+        return c.json({ error: 'invalid_request', error_description: 'vp_token must be a JSON object' }, 400)
+      }
+      return errorResponse(c, error)
+    }
+  }
+  verifyApp.post('/callback', (c) => callback(c, false))
+  verifyApp.post('/callback-kbjwt', (c) => callback(c, true))
 
   verifyApp.get('/request.jwt/:request-object-Id', async (c) => {
     try {
-      console.log('request-object-Id:', c.req.param('request-object-Id'))
-      const verifierId = VerifierClientId(baseUrl)
-      const parseResult = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
-      if (!parseResult.success) {
-        return c.json(
-          {
-            error: 'invalid_request',
-            error_description: 'Invalid request-object-Id parameter.',
-          },
-          400
-        )
-      }
-      const requestObjectId = parseResult.data
-      const jar = await verifierFlow.findRequestObject(verifierId, requestObjectId)
-      return c.body(jar, 200, {
-        'Content-Type': 'application/oauth-authz-req+jwt',
-      })
-    } catch (err) {
-      const errorResponse = handleError(err)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
+      const id = VerifierRequestObjectId.schema.safeParse(c.req.param('request-object-Id'))
+      if (!id.success) return c.json({ error: 'invalid_request', error_description: 'Invalid request-object-Id' }, 400)
+      const jar = await verifierFlow.findRequestObject(VerifierClientId(baseUrl), id.data)
+      return c.body(jar, 200, { 'Content-Type': 'application/oauth-authz-req+jwt', 'Cache-Control': 'no-store' })
+    } catch (error) {
+      return errorResponse(c, error)
     }
   })
 
-  verifyApp.get('/verified', async (c) => {
-    console.log('Verified received from get request')
-    return c.json({ message: 'DONE!!' }, 200)
-  })
+  verifyApp.get('/verified', (c) => c.json({ message: 'DONE!!' }))
 
   verifyApp.get('/presentation-transaction/:transactionId', async (c) => {
-    const transactionId = c.req.param('transactionId')?.trim() ?? ''
-    if (transactionId === '') {
-      return c.json(
-        { error: 'invalid_request', error_description: 'transactionId is required' },
-        400
-      )
-    }
     try {
+      const transactionId = c.req.param('transactionId')
       const result = await verifierFlow.getTransaction(transactionId)
       return c.json({
-        transaction_id: transactionId,
-        state: result.state,
-        client_id: result.clientId,
-        expires_at: result.expiresAt,
+        transaction_id: transactionId, state: result.state,
+        client_id: result.clientId, expires_at: result.expiresAt,
       })
-    } catch (err) {
-      const errorResponse = handleError(err)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
+    } catch (error) {
+      return errorResponse(c, error)
     }
   })
 
   verifyApp.delete('/presentation-transaction/:transactionId', async (c) => {
-    const transactionId = c.req.param('transactionId')?.trim() ?? ''
-    if (transactionId === '') {
-      return c.json(
-        { error: 'invalid_request', error_description: 'transactionId is required' },
-        400
-      )
-    }
     try {
+      const transactionId = c.req.param('transactionId')
       const existing = await verifierFlow.getTransaction(transactionId)
       if (existing.state) {
-        vpAudTx.consume(existing.state)
+        const session = sessions.get(existing.state)
+        if (session?.transactionId === transactionId) sessions.remove(existing.state, session)
       }
       await verifierFlow.deleteTransaction(transactionId)
-      return c.json({ ok: true }, 200)
-    } catch (err) {
-      const errorResponse = handleError(err)
-      const status = errorResponse.error === 'internal_server_error' ? 500 : 400
-      return c.json(errorResponse, status)
+      return c.json({ ok: true })
+    } catch (error) {
+      return errorResponse(c, error)
     }
   })
 

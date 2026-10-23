@@ -138,6 +138,7 @@
       <button class="btn" id="btnStart" style="--btn-color: var(--color-verifier);">
         <span>🔑 検証要求を作成する</span>
       </button>
+      <p id="verificationNotice" role="status" style="display: none; margin-top: 1rem;"></p>
     </div>
 
     <!-- 検証フェーズ：QRコード表示＆待機 -->
@@ -225,6 +226,7 @@
 
     // 1. 検証要求 (Request Object) の生成
     btnStart.addEventListener('click', async () => {
+      document.getElementById('verificationNotice').style.display = 'none';
       btnStart.disabled = true;
       btnStart.innerHTML = '<span class="spinner"></span> <span>要求生成中...</span>';
 
@@ -386,6 +388,11 @@
         polling = true;
         try {
           const res = await fetch('/api/status?state=' + encodeURIComponent(state), { cache: 'no-store' });
+          if (activeState !== state) return;
+          if (res.status === 404 || res.status === 410) {
+            resetVerification('検証要求が見つからないか、有効期限が切れました。もう一度作成してください。');
+            return;
+          }
           if (!res.ok) throw new Error('Failed to fetch verification status');
           const data = await res.json();
           if (activeState !== state) return;
@@ -421,7 +428,7 @@
     });
 
     // リスタート
-    btnRestart.addEventListener('click', () => {
+    function resetVerification(message = '') {
       activeState = null;
       if (pollingInterval) {
         clearInterval(pollingInterval);
@@ -438,10 +445,17 @@
       vcToggleIcon.style.transform = 'rotate(0deg)';
       vcDetailsOpen = false;
       startCard.style.display = 'block';
+      verifyArea.style.display = 'none';
       successArea.style.display = 'none';
+      requestUrlInput.value = '';
+      document.getElementById('vcBody').innerHTML = '';
+      const notice = document.getElementById('verificationNotice');
+      notice.textContent = message;
+      notice.style.display = message ? 'block' : 'none';
       btnStart.disabled = false;
       btnStart.innerHTML = '<span>🔑 検証要求を作成する</span>';
-    });
+    }
+    btnRestart.addEventListener('click', () => resetVerification());
   </script>
 </body>
 </html>

@@ -21,7 +21,8 @@ import { initializeVerifierFlow, VerifierClientId, VerifierMetadata } from '@tru
 import { createAuthzRouter } from './routes/authz.js'
 import { createIssueRouter } from './routes/issue.js'
 import { createVerifierRouter } from './routes/verify.js'
-import { createIssuerCustomRouter, createVerifierCustomRouter } from './app/routes.js'
+import { createIssuerCustomRouter } from './app/routes.js'
+import { createIssuanceSessionStore } from './utils/issuance-session-store.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -120,13 +121,13 @@ async function run() {
   })
 
   const publicDir = resolve(projectDir, 'public')
+  const issuanceSessions = createIssuanceSessionStore()
 
   if (issuerPort === verifierPort) {
     const app = new Hono()
-    app.route('/', createIssuerCustomRouter(context, issuerBaseUrl))
+    app.route('/', createIssuerCustomRouter(context, issuerBaseUrl, issuanceSessions))
     app.route('/', createIssueRouter(context, issuerBaseUrl))
-    app.route('/', createAuthzRouter(context, issuerBaseUrl))
-    app.route('/', createVerifierCustomRouter(context, verifierBaseUrl))
+    app.route('/', createAuthzRouter(context, issuerBaseUrl, { issuanceSessions }))
     app.route('/', createVerifierRouter(context, verifierBaseUrl))
     app.use('/verifier.html', async (c, next) => {
       await next()
@@ -148,9 +149,9 @@ async function run() {
     })
   } else {
     const issuerApp = new Hono()
-    issuerApp.route('/', createIssuerCustomRouter(context, issuerBaseUrl))
+    issuerApp.route('/', createIssuerCustomRouter(context, issuerBaseUrl, issuanceSessions))
     issuerApp.route('/', createIssueRouter(context, issuerBaseUrl))
-    issuerApp.route('/', createAuthzRouter(context, issuerBaseUrl))
+    issuerApp.route('/', createAuthzRouter(context, issuerBaseUrl, { issuanceSessions }))
     issuerApp.get('/verifier.html', (c) => c.text('404 Not Found', 404))
     issuerApp.use('/*', serveStatic({ root: publicDir }))
     issuerApp.notFound((c) => c.text('404 Not Found', 404))
@@ -160,7 +161,6 @@ async function run() {
     })
 
     const verifierApp = new Hono()
-    verifierApp.route('/', createVerifierCustomRouter(context, verifierBaseUrl))
     verifierApp.route('/', createVerifierRouter(context, verifierBaseUrl))
     verifierApp.get('/issuer.html', (c) => c.text('404 Not Found', 404))
     verifierApp.use('/verifier.html', async (c, next) => {

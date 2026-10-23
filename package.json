@@ -2,10 +2,14 @@
   "name": "hello-vcknots-root",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "workspaces": [
     "issuer-verifier"
   ],
   "scripts": {
+    "test": "pnpm build && node --test test/*.test.cjs",
     "gen-keys": "pnpm --filter hello-vcknots-issuer-verifier run gen-keys",
     "build": "pnpm build:issuer-verifier",
     "build:issuer-verifier": "pnpm --filter hello-vcknots-issuer-verifier build",

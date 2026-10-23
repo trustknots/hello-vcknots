@@ -29,7 +29,7 @@ VC Knots の「Hello World」として、新しく VC Knots の世界に足を�
 
 | ツール | 必要バージョン | 備考 |
 | --- | --- | --- |
-| Node.js | 18 以上 | Web Crypto API が必要 |
+| Node.js | 24 系 | Web Crypto API が必要 |
 | Go | 1.21 以上 | go.mod 指定バージョン（1.26）は toolchain 機能で自動ダウンロード |
 | pnpm | 8 以上 | |
 

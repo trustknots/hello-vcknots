@@ -8,7 +8,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const quietConsole = { log() {}, warn() {}, error() {} };
 
 // Run the actual page scripts with controllable DOM events and delayed network responses.
-function page(file, fetch) {
+function page(file, fetch, globals = {}) {
   const elements = new Map();
   const inputs = [];
   const timers = new Map();
@@ -41,6 +41,7 @@ function page(file, fetch) {
     document, fetch, console: quietConsole, alert() {}, window: { addEventListener() {} },
     setInterval(fn) { timers.set(++timerId, fn); return timerId; },
     clearInterval(id) { timers.delete(id); },
+    ...globals,
   });
   vm.runInContext(read(file).match(/<script>([\s\S]*?)<\/script>/)[1], context);
   return { context, inputs, timers, get: id => document.getElementById(id) };
@@ -101,62 +102,29 @@ test('verifier ignores an old polling response after starting a new request', as
   assert.equal(ui.get('successArea').style.display, 'block');
 });
 
-test('routes isolate verification results and reject reused states', async () => {
-  const ts = require('../issuer-verifier/node_modules/typescript');
-  const { Hono } = require('../issuer-verifier/node_modules/hono');
-  const exports = {};
-  let failCreation = false;
-  // Stub cryptographic flow operations; exercise the actual Hono handlers and state lifecycle.
-  const flow = {
-    async createAuthzRequest(...args) {
-      if (failCreation) throw new Error('Creation failed');
-      return { request: { nonce: 'nonce' }, transactionId: args[6].state };
-    },
-    async verifyPresentations(response) {
-      if (response.vp_token.fail) throw new Error('Verification failed');
-      const payload = { vc: { credentialSubject: { username: response.state } } };
-      const jwt = 'header.' + Buffer.from(JSON.stringify(payload)).toString('base64url') + '.signature';
-      return { medal: [{ vp: { verifiableCredential: [jwt] } }] };
-    },
-  };
-  const source = ts.transpileModule(read('issuer-verifier/src/app/routes.ts'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  vm.runInNewContext(source, { exports, Buffer, console: quietConsole, require(name) {
-    if (name === 'node:crypto') return require(name);
-    if (name === 'hono') return { Hono };
-    if (name === '@trustknots/vcknots/verifier') return {
-      initializeVerifierFlow: () => flow,
-      VerifierClientId: x => x, ClientIdentifier: x => x, VerifierAuthorizationResponse: x => x,
-    };
-    return {};
-  } });
-  const router = exports.createVerifierCustomRouter({}, 'http://localhost:8081');
-  const request = state => router.request('/request', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, credentialId: 'VCKnotsUserMedal' }),
-  });
-  const callback = (state, fail = false) => router.request('/callback', {
-    method: 'POST', body: new URLSearchParams({ state, vp_token: JSON.stringify({ fail }) }),
-  });
-  const status = async state => (await router.request('/api/status?state=' + state)).json();
-  assert.equal((await router.request('/api/status')).status, 400);
-  assert.equal((await router.request('/api/status?state=unknown')).status, 404);
-  assert.equal((await request('A')).status, 200);
-  assert.equal((await callback('A')).status, 200);
-  assert.equal((await request('B')).status, 200);
-  assert.deepEqual(await status('B'), { status: 'idle', username: '', vc: null });
-  assert.equal((await status('A')).username, 'A');
-  assert.equal((await callback('B', true)).status, 400);
-  assert.equal((await status('B')).status, 'idle');
-  assert.equal((await callback('B')).status, 200);
-  assert.equal((await status('B')).vc.vc.credentialSubject.username, 'B');
-  assert.equal((await status('A')).username, 'A');
-  assert.equal((await request('A')).status, 409);
-  assert.equal((await callback('A')).status, 400);
-  failCreation = true;
-  assert.equal((await request('C')).status, 500);
-  failCreation = false;
-  assert.equal((await request('C')).status, 200);
-  assert.deepEqual((await Promise.all([request('D'), request('D')])).map(r => r.status).sort(), [200, 409]);
+test('verifier stops polling and allows a new request after expiration', async () => {
+  const ui = page('issuer-verifier/public/verifier.html', async () => ({ ok: false, status: 404 }));
+  ui.get('btnStart').disabled = true;
+  ui.get('verifyArea').style.display = 'block';
+  vm.runInContext("startPolling('expired')", ui.context);
+  await [...ui.timers.values()][0]();
+  assert.equal(ui.timers.size, 0);
+  assert.equal(ui.get('verifyArea').style.display, 'none');
+  assert.equal(ui.get('startCard').style.display, 'block');
+  assert.equal(ui.get('btnStart').disabled, false);
+  assert.match(ui.get('verificationNotice').textContent, /有効期限/);
+});
+
+test('issuer submits its username with a single Offer creation request', async () => {
+  const requests = [];
+  const ui = page('issuer-verifier/public/issuer.html', async (url, options) => {
+    requests.push({ url, options });
+    return { ok: true, text: async () => 'openid-credential-offer://?credential_offer=sample' };
+  }, { QRious: function () {} });
+  ui.get('username').value = 'Alice';
+  await ui.get('btnIssue').listeners.click();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, '/configurations/VCKnotsUserMedal/offer');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { username: 'Alice' });
+  assert.equal(ui.get('resultArea').style.display, 'block');
 });
