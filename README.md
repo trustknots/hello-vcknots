@@ -4,8 +4,6 @@
 
 VC Knots の「Hello World」として、新しく VC Knots の世界に足を踏み入れた新規ユーザーの門出を祝う **「VC Knots User メダル」** という VC を配布し、それを検証してコミュニティへ歓迎する、というストーリーをベースにしています。
 
-ライトテーマと親しみやすいすっきりとした境界線を用いた「フラットデザイン（Flat Design）」を採用しています。
-
 ---
 
 ## 🏗 アプリケーション構成
@@ -126,7 +124,7 @@ Wallet Web UI: http://localhost:8082
 
 <img src="docs/screenshots/step2-wallet-01.png" alt="Wallet: Offer URL 入力" width="600">
 
-4. OpenID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに、美しいフラットデザインの **「🏅 VC Knots User Medal」** カードが追加されます！
+4. OpenID4VCI プロトコルによる通信が行われ、数秒後に **「My Medals（保有メダル）」** グリッドに **「🏅 VC Knots User Medal」** カードが追加されます！
 5. カード内の **「Username」** が Issuer で入力した名前になっていること、および発行日が正しく描画されていることを確認します。
 
 <img src="docs/screenshots/step2-wallet-02.png" alt="Wallet: メダル獲得後のコレクション表示" width="600">
@@ -165,11 +163,3 @@ Wallet Web UI: http://localhost:8082
 12. 提示されたVCの詳細情報は **「VC詳細情報」** をクリックで展開されます。
 
 <img src="docs/screenshots/step3-verifier-06.png" alt="Verifier: Welcome to VC Knots! ウェルカム画面" width="600">
-
----
-
-## 🎨 デザインのこだわり（Flat Design）
-
-本アプリは、単色（ソリッドカラー）の塗りと明快な境界線、およびハードシャドウを組み合わせた **「フラット・レトロモダン」** なスタイルを採用しています。
-- グラデーションやボカシ（blur）を使わず、白・グレーを基調に、はっきりとした黒枠線 (`border: 2px solid #1f2937`) と、少しズレた影 (`box-shadow: 4px 4px 0px 0px #1f2937`) で構成された、親しみやすくメリハリのあるビジュアルです。
-- スマートフォンや PC からでも、ボタンの押しやすさやカードの可読性に配慮したレスポンシブな設計になっています。
